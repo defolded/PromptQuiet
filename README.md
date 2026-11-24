@@ -42,3 +42,7 @@ make docker-test
 ```
 
 On first launch, click **Grant Accessibility Access** in the PromptQuiet menu bar popover so macOS allows the `.listenOnly` key-code monitor.
+
+## License
+
+Licensed under the [GNU General Public License v3.0](LICENSE).
