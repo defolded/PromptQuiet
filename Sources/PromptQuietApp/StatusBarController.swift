@@ -101,31 +101,24 @@ final class StatusBarController: NSObject {
     private func updateStatusButton() {
         guard let button = statusItem.button else { return }
 
+        let symbolConfig = NSImage.SymbolConfiguration(pointSize: 13.5, weight: .medium)
         let image = NSImage(
             systemSymbolName: controller.menuBarSymbolName,
             accessibilityDescription: "PromptQuiet"
-        )
+        )?.withSymbolConfiguration(symbolConfig)
         image?.isTemplate = true
         button.image = image
 
-        if controller.settings.showCountdownInMenuBar {
-            // Fixed slot width keeps neighboring menu bar icons from jumping sideways as digits change.
-            statusItem.length = 54
+        if controller.settings.showCountdownInMenuBar,
+           let seconds = controller.remainingSeconds {
+            statusItem.length = 44
             let attributes: [NSAttributedString.Key: Any] = [
-                .font: NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
+                .font: NSFont.monospacedDigitSystemFont(ofSize: 11.5, weight: .medium)
             ]
-            if let seconds = controller.remainingSeconds {
-                button.attributedTitle = NSAttributedString(string: " \(seconds)s", attributes: attributes)
-                button.imagePosition = .imageLeading
-            } else if controller.isManuallyPaused {
-                button.attributedTitle = NSAttributedString(string: " ON", attributes: attributes)
-                button.imagePosition = .imageLeading
-            } else {
-                button.title = ""
-                button.imagePosition = .imageOnly
-            }
+            button.attributedTitle = NSAttributedString(string: " \(seconds)s", attributes: attributes)
+            button.imagePosition = .imageLeading
         } else {
-            statusItem.length = NSStatusItem.squareLength
+            statusItem.length = NSStatusItem.variableLength
             button.title = ""
             button.imagePosition = .imageOnly
         }

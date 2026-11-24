@@ -137,6 +137,26 @@ final class InputMonitor {
         ensureTrustPolling()
     }
 
+    func resetAndRequestAccessibilityPermission() {
+        let lsregisterPath = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+        if FileManager.default.isExecutableFile(atPath: lsregisterPath) {
+            let lsProcess = Process()
+            lsProcess.executableURL = URL(fileURLWithPath: lsregisterPath)
+            lsProcess.arguments = ["-f", Bundle.main.bundlePath]
+            try? lsProcess.run()
+            lsProcess.waitUntilExit()
+        }
+
+        let bundleID = Bundle.main.bundleIdentifier ?? "com.promptquiet.app"
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/tccutil")
+        process.arguments = ["reset", "All", bundleID]
+        try? process.run()
+        process.waitUntilExit()
+
+        requestAccessibilityPermission()
+    }
+
     func refreshAccessibilityAndTap() {
         let axTrusted = AXIsProcessTrusted()
         let listenTrusted = CGPreflightListenEventAccess()

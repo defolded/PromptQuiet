@@ -16,6 +16,12 @@ CONTENTS_DIR="$APP_DIR/Contents"
 MACOS_DIR="$CONTENTS_DIR/MacOS"
 BIN_PATH="$BIN_DIR/PromptQuiet"
 
+OLD_HASH=""
+if [[ -f "$MACOS_DIR/PromptQuiet" ]]; then
+    OLD_HASH="$(shasum -a 256 "$MACOS_DIR/PromptQuiet" | awk '{print $1}')"
+fi
+NEW_HASH="$(shasum -a 256 "$BIN_PATH" | awk '{print $1}')"
+
 rm -rf "$APP_DIR"
 mkdir -p "$MACOS_DIR"
 
@@ -54,4 +60,11 @@ cat > "$CONTENTS_DIR/Info.plist" << 'EOF'
 EOF
 
 codesign --force --deep --sign - "$APP_DIR"
+LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+if [[ -x "$LSREGISTER" ]]; then
+    "$LSREGISTER" -f "$APP_DIR"
+fi
+if [[ "$OLD_HASH" != "$NEW_HASH" ]]; then
+    tccutil reset All com.promptquiet.app >/dev/null 2>&1 || true
+fi
 echo "Built $APP_DIR"

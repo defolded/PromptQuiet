@@ -213,6 +213,11 @@ final class AppController: ObservableObject {
         inputMonitor.requestAccessibilityPermission()
     }
 
+    func resetAndGrantAccessibilityPermission() {
+        onRequestCloseMenu?()
+        inputMonitor.resetAndRequestAccessibilityPermission()
+    }
+
     func setLaunchAtLogin(_ enabled: Bool) {
         do {
             if enabled {

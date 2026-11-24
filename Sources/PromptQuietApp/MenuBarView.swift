@@ -276,6 +276,7 @@ private struct TimerSliderRow: View {
 }
 
 private struct EnginePillPicker: View {
+    @Environment(\.colorScheme) private var colorScheme
     @Binding var selection: SuppressionMode
 
     var body: some View {
@@ -292,8 +293,19 @@ private struct EnginePillPicker: View {
                         .padding(.vertical, 4)
                         .background(
                             Capsule()
-                                .fill(isSelected ? Color.white.opacity(0.88) : Color.clear)
-                                .shadow(color: isSelected ? .black.opacity(0.08) : .clear, radius: 1.5, y: 0.5)
+                                .fill(selectedFill(isSelected: isSelected))
+                                .overlay(
+                                    Capsule()
+                                        .strokeBorder(
+                                            isSelected ? Color.primary.opacity(colorScheme == .dark ? 0.18 : 0.08) : Color.clear,
+                                            lineWidth: 0.5
+                                        )
+                                )
+                                .shadow(
+                                    color: isSelected ? .black.opacity(colorScheme == .dark ? 0.25 : 0.08) : .clear,
+                                    radius: 1.5,
+                                    y: 0.5
+                                )
                         )
                 }
                 .buttonStyle(.plain)
@@ -303,8 +315,13 @@ private struct EnginePillPicker: View {
         .padding(2)
         .background(
             Capsule()
-                .fill(Color.primary.opacity(0.09))
+                .fill(colorScheme == .dark ? Color.black.opacity(0.32) : Color.primary.opacity(0.09))
         )
+    }
+
+    private func selectedFill(isSelected: Bool) -> Color {
+        guard isSelected else { return Color.clear }
+        return colorScheme == .dark ? Color.white.opacity(0.22) : Color.white.opacity(0.95)
     }
 
     private func tooltipText(for mode: SuppressionMode) -> String {
@@ -381,7 +398,7 @@ struct MenuBarView: View {
 
             if !controller.isAccessibilityTrusted {
                 VStack(alignment: .leading, spacing: 5) {
-                    HStack(spacing: 8) {
+                    HStack(spacing: 6) {
                         Button {
                             controller.grantAccessibilityPermission()
                         } label: {
@@ -397,6 +414,19 @@ struct MenuBarView: View {
                         .hoverTooltip("Opens macOS Accessibility settings so PromptQuiet can detect keystrokes in Claude, ChatGPT, Antigravity, and Cursor. No typed text is ever read.")
 
                         Button {
+                            controller.resetAndGrantAccessibilityPermission()
+                        } label: {
+                            Text("Reset")
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(.secondary)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 5)
+                                .background(Capsule().fill(Color.primary.opacity(0.07)))
+                        }
+                        .buttonStyle(.plain)
+                        .hoverTooltip("Clears stale permission cache from older builds and re-prompts macOS.")
+
+                        Button {
                             controller.refreshPermissions()
                         } label: {
                             Image(systemName: "arrow.clockwise")
@@ -409,7 +439,7 @@ struct MenuBarView: View {
                         .hoverTooltip("Re-check Accessibility permission status immediately.")
                     }
 
-                    Text("If already toggled ON in System Settings, switch it OFF then ON once.")
+                    Text("Enable PromptQuiet in Device Control / Accessibility (click Reset if already listed from an older build).")
                         .font(.system(size: 10.5))
                         .foregroundStyle(.secondary)
                 }
