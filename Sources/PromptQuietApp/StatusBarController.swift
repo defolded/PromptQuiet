@@ -23,7 +23,7 @@ private final class SizingHostingView<Content: View>: NSHostingView<Content> {
 /// hosting `MenuBarView`, avoiding SwiftUI `MenuBarExtra(.window)` top/bottom box artifacts.
 @MainActor
 final class StatusBarController: NSObject {
-    private static let panelWidth: CGFloat = 348
+    private static let panelWidth: CGFloat = 328
 
     private let controller: AppController
     private let statusItem: NSStatusItem
@@ -161,12 +161,17 @@ final class StatusBarController: NSObject {
         let targetScreen = buttonWindow.screen ?? NSScreen.main
         let visibleFrame = targetScreen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
 
-        let topY = buttonScreenRect.minY - 6
+        let topY = buttonScreenRect.minY - 2
         let originY = max(visibleFrame.minY + 8, topY - size.height)
-        let preferredX = buttonScreenRect.minX
+        let preferredX = round(buttonScreenRect.midX - Self.panelWidth / 2)
         let maxX = visibleFrame.maxX - size.width - 8
         let minX = visibleFrame.minX + 8
         let originX = max(minX, min(preferredX, maxX))
+
+        let arrowX = min(max(buttonScreenRect.midX - originX, 36), Self.panelWidth - 36)
+        if abs(controller.popoverArrowX - arrowX) > 0.5 {
+            controller.popoverArrowX = arrowX
+        }
 
         panel.setFrame(NSRect(origin: NSPoint(x: originX, y: originY), size: size), display: true)
     }

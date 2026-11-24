@@ -18,6 +18,7 @@ final class AppController: ObservableObject {
     @Published private(set) var lastObservedExternalApp: RunningAppInfo?
     @Published private(set) var backendError: String?
     @Published var launchAtLogin: Bool = false
+    @Published var popoverArrowX: CGFloat = 164
     var isMenuPanelOpen: Bool = false
 
     private let pauseBackend = NotificationCenterPauseBackend()
