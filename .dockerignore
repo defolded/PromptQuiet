@@ -1,0 +1,8 @@
+.build
+.swiftpm
+.git
+dist
+*.app
+.DS_Store
+DerivedData
+Sources/PromptQuietApp

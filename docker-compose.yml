@@ -1,0 +1,12 @@
+services:
+  core-test:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["swift", "test"]
+    volumes:
+      - .:/workspace
+      - swift-build-cache:/workspace/.build
+
+volumes:
+  swift-build-cache:
