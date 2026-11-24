@@ -93,11 +93,15 @@ struct PromptQuietCoreTests {
         let settings = PromptQuietSettings()
 
         let claude = RunningAppInfo(bundleIdentifier: "com.anthropic.claudefordesktop", localizedName: "Claude")
+        let chatgptCodex = RunningAppInfo(bundleIdentifier: "com.openai.codex", localizedName: "ChatGPT")
+        let chatgptDesktop = RunningAppInfo(bundleIdentifier: "com.openai.chat", localizedName: "ChatGPT")
         let antigravity = RunningAppInfo(bundleIdentifier: "com.google.antigravity", localizedName: "Antigravity")
         let cursor = RunningAppInfo(bundleIdentifier: "com.todesktop.230313mzl4w4u92", localizedName: "Cursor")
         let safari = RunningAppInfo(bundleIdentifier: "com.apple.Safari", localizedName: "Safari")
 
         #expect(AppMatcher.matches(claude, settings: settings) == "Claude")
+        #expect(AppMatcher.matches(chatgptCodex, settings: settings) == "ChatGPT")
+        #expect(AppMatcher.matches(chatgptDesktop, settings: settings) == "ChatGPT")
         #expect(AppMatcher.matches(antigravity, settings: settings) == "Antigravity")
         #expect(AppMatcher.matches(cursor, settings: settings) == "Cursor")
         #expect(AppMatcher.matches(safari, settings: settings) == nil)
@@ -183,5 +187,23 @@ struct PromptQuietCoreTests {
 
         #expect(machine.setManualPause(false) == .resume)
         #expect(machine.state == .idle)
+    }
+
+    @Test("Legacy JSON settings without knownApps automatically enable newly added ChatGPT app")
+    func legacySettingsUpgradeEnablesChatGPT() throws {
+        let legacyJSON = """
+        {
+          "isEnabled": true,
+          "typingPauseSeconds": 20,
+          "postSendPauseSeconds": 5,
+          "suppressionMode": "notificationCenterPause",
+          "enabledApps": ["claude", "antigravity", "cursor"],
+          "customBundleIdentifiers": [],
+          "showCountdownInMenuBar": true
+        }
+        """
+        let decoded = try PromptQuietSettings.decodeJSON(from: Data(legacyJSON.utf8))
+        #expect(decoded.enabledApps.contains(.chatgpt))
+        #expect(decoded.knownApps == Set(BuiltInApp.allCases))
     }
 }

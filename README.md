@@ -1,10 +1,10 @@
 # PromptQuiet
 
-A lightweight macOS top-menu-bar utility (`LSUIElement = true`) that silently pauses macOS notifications while you type into **Claude**, **Antigravity**, or **Cursor**, without triggering Focus Mode ("Do Not Disturb On/Off") banners.
+A lightweight macOS top-menu-bar utility (`LSUIElement = true`) that silently pauses macOS notifications while you type into **Claude**, **ChatGPT**, **Antigravity**, or **Cursor**, without triggering Focus Mode ("Do Not Disturb On/Off") banners.
 
 ## Behavior
 
-- **Stop-Typing Delay (default `20s`)**: Any typing inside Claude, Antigravity, or Cursor suppresses notifications and resets the countdown. Once you stop typing, notifications resume after `20s` (adjustable from the menu bar).
+- **Stop-Typing Delay (default `20s`)**: Any typing inside Claude, ChatGPT, Antigravity, or Cursor suppresses notifications and resets the countdown. Once you stop typing, notifications resume after `20s` (adjustable from the menu bar).
 - **After Sending Prompt (default `5s`)**: Pressing `Return` or `Cmd+Return` switches to a `5s` post-send countdown (also adjustable from the menu bar). Pressing `Shift+Return` adds a newline and keeps the `20s` typing timer. Typing again during the `5s` countdown cancels it and restores the `20s` typing timer.
 - **Zero-Keylogging Privacy**: Uses a `.listenOnly` `CGEventTap` that inspects only virtual key codes and modifier flags (`Shift`, `Cmd`, `Ctrl`, `Opt`). Typed characters are never read or stored.
 

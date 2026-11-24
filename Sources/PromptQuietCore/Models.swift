@@ -29,6 +29,7 @@ public enum SuppressionMode: String, Codable, CaseIterable, Sendable, Identifiab
 /// Supported built-in target applications where prompt typing triggers notification suppression.
 public enum BuiltInApp: String, Codable, CaseIterable, Hashable, Sendable, Identifiable {
     case claude
+    case chatgpt
     case antigravity
     case cursor
 
@@ -38,6 +39,8 @@ public enum BuiltInApp: String, Codable, CaseIterable, Hashable, Sendable, Ident
         switch self {
         case .claude:
             return "Claude"
+        case .chatgpt:
+            return "ChatGPT"
         case .antigravity:
             return "Antigravity"
         case .cursor:
@@ -49,6 +52,8 @@ public enum BuiltInApp: String, Codable, CaseIterable, Hashable, Sendable, Ident
         switch self {
         case .claude:
             return ["com.anthropic.claudefordesktop"]
+        case .chatgpt:
+            return ["com.openai.chat", "com.openai.codex", "com.openai.chatgpt"]
         case .antigravity:
             return ["com.google.antigravity"]
         case .cursor:
@@ -60,6 +65,8 @@ public enum BuiltInApp: String, Codable, CaseIterable, Hashable, Sendable, Ident
         switch self {
         case .claude:
             return ["claude"]
+        case .chatgpt:
+            return ["chatgpt"]
         case .antigravity:
             return ["antigravity"]
         case .cursor:

@@ -393,7 +393,7 @@ struct MenuBarView: View {
                             .background(Capsule().fill(.orange.opacity(0.14)))
                     }
                     .buttonStyle(.plain)
-                    .hoverTooltip("Opens macOS Accessibility settings so PromptQuiet can detect keystrokes in Claude, Antigravity, and Cursor. No typed text is ever read.")
+                    .hoverTooltip("Opens macOS Accessibility settings so PromptQuiet can detect keystrokes in Claude, ChatGPT, Antigravity, and Cursor. No typed text is ever read.")
 
                     Button {
                         controller.refreshPermissions()

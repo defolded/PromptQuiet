@@ -10,6 +10,7 @@ public struct PromptQuietSettings: Codable, Equatable, Sendable {
     public var postSendPauseSeconds: Int
     public var suppressionMode: SuppressionMode
     public var enabledApps: Set<BuiltInApp>
+    public var knownApps: Set<BuiltInApp>?
     public var customBundleIdentifiers: [String]
     public var showCountdownInMenuBar: Bool
 
@@ -19,6 +20,7 @@ public struct PromptQuietSettings: Codable, Equatable, Sendable {
         postSendPauseSeconds: Int = 5,
         suppressionMode: SuppressionMode = .notificationCenterPause,
         enabledApps: Set<BuiltInApp> = Set(BuiltInApp.allCases),
+        knownApps: Set<BuiltInApp>? = Set(BuiltInApp.allCases),
         customBundleIdentifiers: [String] = [],
         showCountdownInMenuBar: Bool = true
     ) {
@@ -27,6 +29,7 @@ public struct PromptQuietSettings: Codable, Equatable, Sendable {
         self.postSendPauseSeconds = Self.clampPostSendPause(postSendPauseSeconds)
         self.suppressionMode = suppressionMode
         self.enabledApps = enabledApps
+        self.knownApps = knownApps
         self.customBundleIdentifiers = customBundleIdentifiers
         self.showCountdownInMenuBar = showCountdownInMenuBar
     }
@@ -42,6 +45,13 @@ public struct PromptQuietSettings: Codable, Equatable, Sendable {
     public mutating func normalize() {
         typingPauseSeconds = Self.clampTypingPause(typingPauseSeconds)
         postSendPauseSeconds = Self.clampPostSendPause(postSendPauseSeconds)
+        let allApps = Set(BuiltInApp.allCases)
+        if let known = knownApps {
+            enabledApps.formUnion(allApps.subtracting(known))
+        } else {
+            enabledApps.insert(.chatgpt)
+        }
+        knownApps = allApps
         customBundleIdentifiers = customBundleIdentifiers
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
