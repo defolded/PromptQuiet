@@ -13,6 +13,7 @@ public struct PromptQuietSettings: Codable, Equatable, Sendable {
     public var knownApps: Set<BuiltInApp>?
     public var customBundleIdentifiers: [String]
     public var showCountdownInMenuBar: Bool
+    public var suppressDockBouncing: Bool
 
     public init(
         isEnabled: Bool = true,
@@ -22,7 +23,8 @@ public struct PromptQuietSettings: Codable, Equatable, Sendable {
         enabledApps: Set<BuiltInApp> = Set(BuiltInApp.allCases),
         knownApps: Set<BuiltInApp>? = Set(BuiltInApp.allCases),
         customBundleIdentifiers: [String] = [],
-        showCountdownInMenuBar: Bool = true
+        showCountdownInMenuBar: Bool = true,
+        suppressDockBouncing: Bool = false
     ) {
         self.isEnabled = isEnabled
         self.typingPauseSeconds = Self.clampTypingPause(typingPauseSeconds)
@@ -32,6 +34,32 @@ public struct PromptQuietSettings: Codable, Equatable, Sendable {
         self.knownApps = knownApps
         self.customBundleIdentifiers = customBundleIdentifiers
         self.showCountdownInMenuBar = showCountdownInMenuBar
+        self.suppressDockBouncing = suppressDockBouncing
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case isEnabled
+        case typingPauseSeconds
+        case postSendPauseSeconds
+        case suppressionMode
+        case enabledApps
+        case knownApps
+        case customBundleIdentifiers
+        case showCountdownInMenuBar
+        case suppressDockBouncing
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.isEnabled = try container.decodeIfPresent(Bool.self, forKey: .isEnabled) ?? true
+        self.typingPauseSeconds = try container.decodeIfPresent(Int.self, forKey: .typingPauseSeconds) ?? 20
+        self.postSendPauseSeconds = try container.decodeIfPresent(Int.self, forKey: .postSendPauseSeconds) ?? 5
+        self.suppressionMode = try container.decodeIfPresent(SuppressionMode.self, forKey: .suppressionMode) ?? .notificationCenterPause
+        self.enabledApps = try container.decodeIfPresent(Set<BuiltInApp>.self, forKey: .enabledApps) ?? Set(BuiltInApp.allCases)
+        self.knownApps = try container.decodeIfPresent(Set<BuiltInApp>.self, forKey: .knownApps)
+        self.customBundleIdentifiers = try container.decodeIfPresent([String].self, forKey: .customBundleIdentifiers) ?? []
+        self.showCountdownInMenuBar = try container.decodeIfPresent(Bool.self, forKey: .showCountdownInMenuBar) ?? true
+        self.suppressDockBouncing = try container.decodeIfPresent(Bool.self, forKey: .suppressDockBouncing) ?? false
     }
 
     public static func clampTypingPause(_ value: Int) -> Int {

@@ -18,7 +18,6 @@ final class AppController: ObservableObject {
     @Published private(set) var lastObservedExternalApp: RunningAppInfo?
     @Published private(set) var backendError: String?
     @Published var launchAtLogin: Bool = false
-    @Published var disableDockBouncing: Bool = DockBounceController.isNoBouncingEnabled()
     @Published var popoverArrowX: CGFloat = 164
     var isMenuPanelOpen: Bool = false
     var onRequestCloseMenu: (() -> Void)?
@@ -35,7 +34,10 @@ final class AppController: ObservableObject {
     init() {
         NotificationCenterPauseBackend.recoverIfPreviouslyCrashed()
 
-        let loadedSettings = Self.loadSettings()
+        var loadedSettings = Self.loadSettings()
+        if DockBounceController.migrateAndRestoreStartupIfNeeded(settings: &loadedSettings) {
+            Self.saveSettings(loadedSettings)
+        }
         self.settings = loadedSettings
         self.stateMachine = SuppressionStateMachine(settings: loadedSettings)
         self.launchAtLogin = (SMAppService.mainApp.status == .enabled)
@@ -202,6 +204,7 @@ final class AppController: ObservableObject {
         _ = stateMachine.resumeNow()
         syncPublishedState(now: Date())
         pauseBackend.emergencyResumeSync()
+        DockBounceController.emergencyRestoreSync()
         Task { @MainActor in
             await streamBackend.resume()
         }
@@ -233,9 +236,14 @@ final class AppController: ObservableObject {
         }
     }
 
-    func setDisableDockBouncing(_ enabled: Bool) {
-        DockBounceController.setNoBouncingEnabled(enabled)
-        disableDockBouncing = enabled
+    func setSuppressDockBouncing(_ enabled: Bool) {
+        var updated = settings
+        updated.suppressDockBouncing = enabled
+        applyUpdatedSettings(updated)
+
+        if stateMachine.isSuppressing {
+            DockBounceController.suppressIfNeeded(enabled: enabled)
+        }
     }
 
     func quitApp() {
@@ -328,6 +336,7 @@ final class AppController: ObservableObject {
     private func activateSuppressionBackend() async {
         do {
             try await activeSuppressor.suppress()
+            DockBounceController.suppressIfNeeded(enabled: settings.suppressDockBouncing)
             backendError = nil
         } catch {
             backendError = error.localizedDescription
@@ -339,6 +348,7 @@ final class AppController: ObservableObject {
     private func deactivateAllSuppressionBackends() async {
         await pauseBackend.resume()
         await streamBackend.resume()
+        DockBounceController.restoreIfNeeded()
         backendError = nil
     }
 
@@ -380,6 +390,7 @@ final class AppController: ObservableObject {
         tickTimer = nil
         pauseBackend.emergencyResumeSync()
         streamBackend.emergencyResumeSync()
+        DockBounceController.emergencyRestoreSync()
         state = .idle
         remainingSeconds = nil
     }
@@ -412,6 +423,7 @@ final class AppController: ObservableObject {
             let source = DispatchSource.makeSignalSource(signal: sig, queue: .main)
             source.setEventHandler {
                 NotificationCenterPauseBackend.resumeAllNotificationCenterProcesses()
+                DockBounceController.emergencyRestoreSync()
                 exit(0)
             }
             source.resume()

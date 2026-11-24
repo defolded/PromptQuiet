@@ -651,10 +651,10 @@ struct MenuBarView: View {
 
             SwitchRow(
                 title: "Stop Dock Bouncing",
-                hint: "Disables vertical Dock icon jumping when apps receive notifications. Briefly refreshes the Dock when toggled while keeping Spaces and Cmd+Tab working normally.",
+                hint: "Stops vertical Dock icon jumping while notifications are paused, and restores normal Dock jumping as soon as notifications turn back on.",
                 isOn: Binding(
-                    get: { controller.disableDockBouncing },
-                    set: { controller.setDisableDockBouncing($0) }
+                    get: { controller.settings.suppressDockBouncing },
+                    set: { controller.setSuppressDockBouncing($0) }
                 )
             )
         }
