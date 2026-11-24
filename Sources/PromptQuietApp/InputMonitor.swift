@@ -7,9 +7,9 @@ import PromptQuietCore
 private final class EventTapContext: @unchecked Sendable {
     var machPort: CFMachPort?
     var runLoopSource: CFRunLoopSource?
-    let handler: @Sendable (KeyAction) -> Void
+    let handler: @Sendable (KeyAction, UInt16) -> Void
 
-    init(handler: @escaping @Sendable (KeyAction) -> Void) {
+    init(handler: @escaping @Sendable (KeyAction, UInt16) -> Void) {
         self.handler = handler
     }
 }
@@ -48,14 +48,15 @@ private let eventTapCallback: CGEventTapCallBack = { _, type, event, userInfo in
     )
 
     if action != .ignored {
-        context.handler(action)
+        context.handler(action, keyCode)
     }
 
     return Unmanaged.passUnretained(event)
 }
 
-/// Monitors the frontmost application and listens for key-down actions via a `.listenOnly` CGEventTap
-/// (with an NSEvent global keyDown fallback). Only virtual key codes and modifier flags are inspected.
+/// Monitors the frontmost application and observes key-down actions via `CGEventTap`
+/// (`.defaultTap` under Accessibility or `.listenOnly` under Input Monitoring) plus an
+/// `NSEvent` global keyDown fallback with timestamp deduplication. Never modifies events or reads text.
 @MainActor
 final class InputMonitor {
     var onKeyAction: ((KeyAction, RunningAppInfo) -> Void)?
@@ -63,19 +64,20 @@ final class InputMonitor {
     var onAccessibilityChanged: ((Bool) -> Void)?
     var onEventTapStateChanged: ((Bool) -> Void)?
 
-    private(set) var isAccessibilityTrusted: Bool = AXIsProcessTrusted()
+    private(set) var isAccessibilityTrusted: Bool = AXIsProcessTrusted() || CGPreflightListenEventAccess()
     private(set) var isEventTapRunning: Bool = false
     private(set) var currentFrontmostApp: RunningAppInfo
 
     private var tapContext: EventTapContext?
     private var retainedContextPointer: UnsafeMutableRawPointer?
+    private var tapModeListenOnly: Bool?
     private var globalKeyMonitor: Any?
     private var trustPollTimer: Timer?
     private var workspaceObserver: NSObjectProtocol?
 
-    var isInputMonitoringReady: Bool {
-        isAccessibilityTrusted || isEventTapRunning || globalKeyMonitor != nil
-    }
+    private var lastDeliveredKeyCode: UInt16?
+    private var lastDeliveredAction: KeyAction?
+    private var lastDeliveredTime: TimeInterval = 0
 
     init() {
         let app = NSWorkspace.shared.frontmostApplication
@@ -137,26 +139,30 @@ final class InputMonitor {
 
     func refreshAccessibilityAndTap() {
         let axTrusted = AXIsProcessTrusted()
+        let listenTrusted = CGPreflightListenEventAccess()
+        let trusted = axTrusted || listenTrusted
 
-        if !isEventTapRunning {
-            startTap()
-        }
-
-        if isEventTapRunning {
-            stopGlobalMonitor()
-        } else if axTrusted {
+        if axTrusted {
+            if !isEventTapRunning || tapModeListenOnly == true {
+                stopTap()
+                startTap(listenOnly: false)
+            }
             startGlobalMonitor()
+        } else if listenTrusted {
+            stopGlobalMonitor()
+            if !isEventTapRunning || tapModeListenOnly == false {
+                stopTap()
+                startTap(listenOnly: true)
+            }
         } else {
+            stopTap()
             stopGlobalMonitor()
         }
 
-        let effectiveTrust = axTrusted || isEventTapRunning || (globalKeyMonitor != nil)
-        if effectiveTrust != isAccessibilityTrusted {
-            isAccessibilityTrusted = effectiveTrust
-        }
-        onAccessibilityChanged?(effectiveTrust)
+        isAccessibilityTrusted = trusted
+        onAccessibilityChanged?(trusted)
 
-        if isInputMonitoringReady {
+        if trusted && (isEventTapRunning || globalKeyMonitor != nil) {
             trustPollTimer?.invalidate()
             trustPollTimer = nil
         } else {
@@ -164,22 +170,37 @@ final class InputMonitor {
         }
     }
 
+    private func deliverAction(_ action: KeyAction, keyCode: UInt16) {
+        let now = ProcessInfo.processInfo.systemUptime
+        if lastDeliveredKeyCode == keyCode,
+           lastDeliveredAction == action,
+           (now - lastDeliveredTime) < 0.025 {
+            return
+        }
+        lastDeliveredKeyCode = keyCode
+        lastDeliveredAction = action
+        lastDeliveredTime = now
+
+        onKeyAction?(action, currentFrontmostApp)
+    }
+
     private func ensureTrustPolling() {
         guard trustPollTimer == nil else { return }
-        trustPollTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
+        let timer = Timer(timeInterval: 1.5, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
                 self?.refreshAccessibilityAndTap()
             }
         }
+        RunLoop.main.add(timer, forMode: .common)
+        trustPollTimer = timer
     }
 
-    private func startTap() {
+    private func startTap(listenOnly: Bool) {
         guard !isEventTapRunning else { return }
 
-        let context = EventTapContext { [weak self] action in
+        let context = EventTapContext { [weak self] action, keyCode in
             Task { @MainActor [weak self] in
-                guard let self else { return }
-                self.onKeyAction?(action, self.currentFrontmostApp)
+                self?.deliverAction(action, keyCode: keyCode)
             }
         }
 
@@ -189,13 +210,14 @@ final class InputMonitor {
         guard let port = CGEvent.tapCreate(
             tap: .cgSessionEventTap,
             place: .headInsertEventTap,
-            options: .listenOnly,
+            options: listenOnly ? .listenOnly : .defaultTap,
             eventsOfInterest: eventMask,
             callback: eventTapCallback,
             userInfo: pointer
         ) else {
             Unmanaged<EventTapContext>.fromOpaque(pointer).release()
             isEventTapRunning = false
+            tapModeListenOnly = nil
             onEventTapStateChanged?(false)
             return
         }
@@ -204,6 +226,7 @@ final class InputMonitor {
             CFMachPortInvalidate(port)
             Unmanaged<EventTapContext>.fromOpaque(pointer).release()
             isEventTapRunning = false
+            tapModeListenOnly = nil
             onEventTapStateChanged?(false)
             return
         }
@@ -216,6 +239,7 @@ final class InputMonitor {
 
         self.tapContext = context
         self.retainedContextPointer = pointer
+        self.tapModeListenOnly = listenOnly
         self.isEventTapRunning = true
         onEventTapStateChanged?(true)
     }
@@ -235,6 +259,7 @@ final class InputMonitor {
         }
 
         tapContext = nil
+        tapModeListenOnly = nil
         if isEventTapRunning {
             isEventTapRunning = false
             onEventTapStateChanged?(false)
@@ -261,8 +286,7 @@ final class InputMonitor {
             guard action != .ignored else { return }
 
             Task { @MainActor [weak self] in
-                guard let self else { return }
-                self.onKeyAction?(action, self.currentFrontmostApp)
+                self?.deliverAction(action, keyCode: keyCode)
             }
         }
     }

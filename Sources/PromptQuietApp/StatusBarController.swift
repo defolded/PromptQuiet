@@ -81,6 +81,10 @@ final class StatusBarController: NSObject {
     }
 
     private func bindControllerUpdates() {
+        controller.onStatusBarUpdate = { [weak self] in
+            self?.updateStatusButton()
+        }
+
         Publishers.CombineLatest4(
             controller.$state,
             controller.$remainingSeconds,
@@ -104,14 +108,24 @@ final class StatusBarController: NSObject {
         image?.isTemplate = true
         button.image = image
 
-        if controller.settings.showCountdownInMenuBar,
-           let seconds = controller.remainingSeconds {
+        if controller.settings.showCountdownInMenuBar {
+            // Fixed slot width keeps neighboring menu bar icons from jumping sideways as digits change.
+            statusItem.length = 54
             let attributes: [NSAttributedString.Key: Any] = [
                 .font: NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
             ]
-            button.attributedTitle = NSAttributedString(string: " \(seconds)s", attributes: attributes)
-            button.imagePosition = .imageLeading
+            if let seconds = controller.remainingSeconds {
+                button.attributedTitle = NSAttributedString(string: " \(seconds)s", attributes: attributes)
+                button.imagePosition = .imageLeading
+            } else if controller.isManuallyPaused {
+                button.attributedTitle = NSAttributedString(string: " ON", attributes: attributes)
+                button.imagePosition = .imageLeading
+            } else {
+                button.title = ""
+                button.imagePosition = .imageOnly
+            }
         } else {
+            statusItem.length = NSStatusItem.squareLength
             button.title = ""
             button.imagePosition = .imageOnly
         }

@@ -380,32 +380,38 @@ struct MenuBarView: View {
             }
 
             if !controller.isAccessibilityTrusted {
-                HStack(spacing: 8) {
-                    Button {
-                        controller.grantAccessibilityPermission()
-                    } label: {
-                        Label("Grant Accessibility Access", systemImage: "hand.raised.fill")
-                            .font(.system(size: 11.5, weight: .medium))
-                            .foregroundStyle(.orange)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 5)
-                            .frame(maxWidth: .infinity)
-                            .background(Capsule().fill(.orange.opacity(0.14)))
-                    }
-                    .buttonStyle(.plain)
-                    .hoverTooltip("Opens macOS Accessibility settings so PromptQuiet can detect keystrokes in Claude, ChatGPT, Antigravity, and Cursor. No typed text is ever read.")
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack(spacing: 8) {
+                        Button {
+                            controller.grantAccessibilityPermission()
+                        } label: {
+                            Label("Grant Accessibility Access", systemImage: "hand.raised.fill")
+                                .font(.system(size: 11.5, weight: .medium))
+                                .foregroundStyle(.orange)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 5)
+                                .frame(maxWidth: .infinity)
+                                .background(Capsule().fill(.orange.opacity(0.14)))
+                        }
+                        .buttonStyle(.plain)
+                        .hoverTooltip("Opens macOS Accessibility settings so PromptQuiet can detect keystrokes in Claude, ChatGPT, Antigravity, and Cursor. No typed text is ever read.")
 
-                    Button {
-                        controller.refreshPermissions()
-                    } label: {
-                        Image(systemName: "arrow.clockwise")
-                            .font(.system(size: 11.5, weight: .medium))
-                            .foregroundStyle(.secondary)
-                            .padding(6)
-                            .background(Circle().fill(Color.primary.opacity(0.07)))
+                        Button {
+                            controller.refreshPermissions()
+                        } label: {
+                            Image(systemName: "arrow.clockwise")
+                                .font(.system(size: 11.5, weight: .medium))
+                                .foregroundStyle(.secondary)
+                                .padding(6)
+                                .background(Circle().fill(Color.primary.opacity(0.07)))
+                        }
+                        .buttonStyle(.plain)
+                        .hoverTooltip("Re-check Accessibility permission status immediately.")
                     }
-                    .buttonStyle(.plain)
-                    .hoverTooltip("Re-check Accessibility permission status immediately.")
+
+                    Text("If already toggled ON in System Settings, switch it OFF then ON once.")
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(.secondary)
                 }
             }
 
@@ -610,6 +616,15 @@ struct MenuBarView: View {
                 isOn: Binding(
                     get: { controller.launchAtLogin },
                     set: { controller.setLaunchAtLogin($0) }
+                )
+            )
+
+            SwitchRow(
+                title: "Stop Dock Bouncing",
+                hint: "Disables vertical Dock icon jumping when apps receive notifications. Briefly refreshes the Dock when toggled while keeping Spaces and Cmd+Tab working normally.",
+                isOn: Binding(
+                    get: { controller.disableDockBouncing },
+                    set: { controller.setDisableDockBouncing($0) }
                 )
             )
         }

@@ -18,9 +18,11 @@ final class AppController: ObservableObject {
     @Published private(set) var lastObservedExternalApp: RunningAppInfo?
     @Published private(set) var backendError: String?
     @Published var launchAtLogin: Bool = false
+    @Published var disableDockBouncing: Bool = DockBounceController.isNoBouncingEnabled()
     @Published var popoverArrowX: CGFloat = 164
     var isMenuPanelOpen: Bool = false
     var onRequestCloseMenu: (() -> Void)?
+    var onStatusBarUpdate: (() -> Void)?
 
     private let pauseBackend = NotificationCenterPauseBackend()
     private let streamBackend = ScreenCaptureStreamBackend()
@@ -106,6 +108,7 @@ final class AppController: ObservableObject {
         var updated = settings
         updated.isEnabled = enabled
         applyUpdatedSettings(updated)
+        onStatusBarUpdate?()
     }
 
     func setTypingPauseSeconds(_ seconds: Int) {
@@ -124,6 +127,7 @@ final class AppController: ObservableObject {
         var updated = settings
         updated.showCountdownInMenuBar = show
         applyUpdatedSettings(updated)
+        onStatusBarUpdate?()
     }
 
     func setSuppressionMode(_ newMode: SuppressionMode) {
@@ -185,6 +189,7 @@ final class AppController: ObservableObject {
 
     func refreshPermissions() {
         inputMonitor.refreshAccessibilityAndTap()
+        onStatusBarUpdate?()
     }
 
     func resumeNow() {
@@ -221,6 +226,11 @@ final class AppController: ObservableObject {
             launchAtLogin = (SMAppService.mainApp.status == .enabled)
             backendError = "Launch at Login failed: \(error.localizedDescription)"
         }
+    }
+
+    func setDisableDockBouncing(_ enabled: Bool) {
+        DockBounceController.setNoBouncingEnabled(enabled)
+        disableDockBouncing = enabled
     }
 
     func quitApp() {
@@ -331,17 +341,20 @@ final class AppController: ObservableObject {
         state = stateMachine.state
         remainingSeconds = stateMachine.remainingSeconds(at: now)
         updateTickTimer()
+        onStatusBarUpdate?()
     }
 
     private func updateTickTimer() {
         switch state {
         case .typingPaused, .postSendPaused:
             if tickTimer == nil {
-                tickTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
+                let timer = Timer(timeInterval: 0.2, repeats: true) { [weak self] _ in
                     Task { @MainActor [weak self] in
                         self?.handleTick()
                     }
                 }
+                RunLoop.main.add(timer, forMode: .common)
+                tickTimer = timer
             }
         case .idle, .manuallyPaused:
             tickTimer?.invalidate()

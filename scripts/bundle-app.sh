@@ -54,6 +54,4 @@ cat > "$CONTENTS_DIR/Info.plist" << 'EOF'
 EOF
 
 codesign --force --deep --sign - "$APP_DIR"
-# Clear stale ad-hoc CDHash Accessibility grant so System Settings doesn't show a broken toggle after rebuilds.
-tccutil reset Accessibility com.promptquiet.app >/dev/null 2>&1 || true
 echo "Built $APP_DIR"
