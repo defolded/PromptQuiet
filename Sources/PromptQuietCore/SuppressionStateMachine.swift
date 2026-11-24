@@ -64,6 +64,10 @@ public struct SuppressionStateMachine: Sendable {
         case .promptSent:
             switch state {
             case .typingPaused, .postSendPaused:
+                if settings.postSendPauseSeconds <= 0 {
+                    state = .idle
+                    return .resume
+                }
                 let expiresAt = now.addingTimeInterval(TimeInterval(settings.postSendPauseSeconds))
                 state = .postSendPaused(expiresAt: expiresAt, appName: appName)
                 return .none
@@ -109,7 +113,7 @@ public struct SuppressionStateMachine: Sendable {
         normalized.normalize()
         settings = normalized
 
-        if !settings.isEnabled && state != .idle {
+        if !settings.isEnabled && state != .idle && state != .manuallyPaused {
             state = .idle
             return .resume
         }
@@ -121,6 +125,10 @@ public struct SuppressionStateMachine: Sendable {
                 state = .typingPaused(expiresAt: maxExpiresAt, appName: appName)
             }
         case .postSendPaused(let expiresAt, let appName):
+            if settings.postSendPauseSeconds <= 0 {
+                state = .idle
+                return .resume
+            }
             let maxExpiresAt = now.addingTimeInterval(TimeInterval(settings.postSendPauseSeconds))
             if expiresAt > maxExpiresAt {
                 state = .postSendPaused(expiresAt: maxExpiresAt, appName: appName)

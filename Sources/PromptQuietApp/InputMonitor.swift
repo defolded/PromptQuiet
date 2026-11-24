@@ -54,8 +54,8 @@ private let eventTapCallback: CGEventTapCallBack = { _, type, event, userInfo in
     return Unmanaged.passUnretained(event)
 }
 
-/// Monitors the frontmost application and listens for key-down actions via a `.listenOnly` CGEventTap.
-/// Only virtual key codes and modifier flags are inspected; typed characters are never read or stored.
+/// Monitors the frontmost application and listens for key-down actions via a `.listenOnly` CGEventTap
+/// (with an NSEvent global keyDown fallback). Only virtual key codes and modifier flags are inspected.
 @MainActor
 final class InputMonitor {
     var onKeyAction: ((KeyAction, RunningAppInfo) -> Void)?
@@ -69,8 +69,13 @@ final class InputMonitor {
 
     private var tapContext: EventTapContext?
     private var retainedContextPointer: UnsafeMutableRawPointer?
+    private var globalKeyMonitor: Any?
     private var trustPollTimer: Timer?
     private var workspaceObserver: NSObjectProtocol?
+
+    var isInputMonitoringReady: Bool {
+        isAccessibilityTrusted || isEventTapRunning || globalKeyMonitor != nil
+    }
 
     init() {
         let app = NSWorkspace.shared.frontmostApplication
@@ -96,6 +101,7 @@ final class InputMonitor {
                     guard let self else { return }
                     self.currentFrontmostApp = info
                     self.onFrontmostAppChanged?(info)
+                    self.refreshAccessibilityAndTap()
                 }
             }
         }
@@ -113,44 +119,54 @@ final class InputMonitor {
         }
 
         stopTap()
+        stopGlobalMonitor()
     }
 
     func requestAccessibilityPermission() {
         // Use the literal key string to avoid Swift 6 concurrency diagnostics on global CFString vars.
         let options = ["AXTrustedCheckOptionPrompt": true] as CFDictionary
         _ = AXIsProcessTrustedWithOptions(options)
+
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
+            NSWorkspace.shared.open(url)
+        }
+
         refreshAccessibilityAndTap()
         ensureTrustPolling()
     }
 
     func refreshAccessibilityAndTap() {
-        let trusted = AXIsProcessTrusted()
-        if trusted != isAccessibilityTrusted {
-            isAccessibilityTrusted = trusted
-            onAccessibilityChanged?(trusted)
-        } else {
-            onAccessibilityChanged?(trusted)
+        let axTrusted = AXIsProcessTrusted()
+
+        if !isEventTapRunning {
+            startTap()
         }
 
-        if trusted {
-            if !isEventTapRunning {
-                startTap()
-            }
-            if isEventTapRunning {
-                trustPollTimer?.invalidate()
-                trustPollTimer = nil
-            } else {
-                ensureTrustPolling()
-            }
+        if isEventTapRunning {
+            stopGlobalMonitor()
+        } else if axTrusted {
+            startGlobalMonitor()
         } else {
-            stopTap()
+            stopGlobalMonitor()
+        }
+
+        let effectiveTrust = axTrusted || isEventTapRunning || (globalKeyMonitor != nil)
+        if effectiveTrust != isAccessibilityTrusted {
+            isAccessibilityTrusted = effectiveTrust
+        }
+        onAccessibilityChanged?(effectiveTrust)
+
+        if isInputMonitoringReady {
+            trustPollTimer?.invalidate()
+            trustPollTimer = nil
+        } else {
             ensureTrustPolling()
         }
     }
 
     private func ensureTrustPolling() {
         guard trustPollTimer == nil else { return }
-        trustPollTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+        trustPollTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
                 self?.refreshAccessibilityAndTap()
             }
@@ -222,6 +238,39 @@ final class InputMonitor {
         if isEventTapRunning {
             isEventTapRunning = false
             onEventTapStateChanged?(false)
+        }
+    }
+
+    private func startGlobalMonitor() {
+        guard globalKeyMonitor == nil else { return }
+        globalKeyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            let keyCode = event.keyCode
+            let flags = event.modifierFlags
+            var modifiers: KeyModifiers = []
+            if flags.contains(.shift) { modifiers.insert(.shift) }
+            if flags.contains(.command) { modifiers.insert(.command) }
+            if flags.contains(.control) { modifiers.insert(.control) }
+            if flags.contains(.option) { modifiers.insert(.option) }
+            let isAutoRepeat = event.isARepeat
+
+            let action = KeyClassifier.classify(
+                keyCode: keyCode,
+                modifiers: modifiers,
+                isAutoRepeat: isAutoRepeat
+            )
+            guard action != .ignored else { return }
+
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.onKeyAction?(action, self.currentFrontmostApp)
+            }
+        }
+    }
+
+    private func stopGlobalMonitor() {
+        if let globalKeyMonitor {
+            NSEvent.removeMonitor(globalKeyMonitor)
+            self.globalKeyMonitor = nil
         }
     }
 }

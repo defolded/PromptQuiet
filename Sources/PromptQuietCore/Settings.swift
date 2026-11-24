@@ -2,8 +2,8 @@ import Foundation
 
 /// Persistent user configuration for PromptQuiet.
 public struct PromptQuietSettings: Codable, Equatable, Sendable {
-    public static let typingPauseRange = 1...300
-    public static let postSendPauseRange = 1...120
+    public static let typingPauseRange = 3...60
+    public static let postSendPauseRange = 0...60
 
     public var isEnabled: Bool
     public var typingPauseSeconds: Int

@@ -138,4 +138,50 @@ struct PromptQuietCoreTests {
         let decoded = try PromptQuietSettings.decodeJSON(from: data)
         #expect(decoded == customSettings)
     }
+
+    @Test("Post-send delay of None (0s) resumes notifications immediately when sending prompt")
+    func postSendNoneResumesImmediately() {
+        let settings = PromptQuietSettings(typingPauseSeconds: 15, postSendPauseSeconds: 0)
+        var machine = SuppressionStateMachine(settings: settings)
+
+        #expect(machine.handleKeyAction(.typing, matchedAppName: "Claude", now: baseDate) == .suppress)
+        #expect(machine.isSuppressing)
+
+        let sendEffect = machine.handleKeyAction(.promptSent, matchedAppName: "Claude", now: baseDate.addingTimeInterval(2))
+        #expect(sendEffect == .resume)
+        #expect(!machine.isSuppressing)
+        #expect(machine.state == .idle)
+    }
+
+    @Test("Timer settings clamp to 3-60s typing and 0-60s post-send")
+    func pauseRangesClamped() {
+        let low = PromptQuietSettings(typingPauseSeconds: 1, postSendPauseSeconds: -5)
+        #expect(low.typingPauseSeconds == 3)
+        #expect(low.postSendPauseSeconds == 0)
+
+        let high = PromptQuietSettings(typingPauseSeconds: 120, postSendPauseSeconds: 90)
+        #expect(high.typingPauseSeconds == 60)
+        #expect(high.postSendPauseSeconds == 60)
+    }
+
+    @Test("Insane Focus Mode pauses notifications indefinitely until turned off")
+    func insaneFocusModeIndefinite() {
+        var settings = PromptQuietSettings()
+        var machine = SuppressionStateMachine(settings: settings)
+
+        #expect(machine.setManualPause(true) == .suppress)
+        #expect(machine.state == .manuallyPaused)
+        #expect(machine.remainingSeconds(at: baseDate) == nil)
+
+        #expect(machine.tick(now: baseDate.addingTimeInterval(10_000)) == .none)
+        #expect(machine.handleKeyAction(.typing, matchedAppName: "Cursor", now: baseDate) == .none)
+        #expect(machine.handleKeyAction(.promptSent, matchedAppName: "Cursor", now: baseDate) == .none)
+
+        settings.isEnabled = false
+        #expect(machine.updateSettings(settings, now: baseDate) == .none)
+        #expect(machine.state == .manuallyPaused)
+
+        #expect(machine.setManualPause(false) == .resume)
+        #expect(machine.state == .idle)
+    }
 }

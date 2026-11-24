@@ -128,6 +128,7 @@ final class StatusBarController: NSObject {
     private func showPanel() {
         isPanelVisible = true
         controller.isMenuPanelOpen = true
+        controller.refreshPermissions()
 
         positionAndResizePanel()
         panel.makeKeyAndOrderFront(nil)
@@ -137,7 +138,7 @@ final class StatusBarController: NSObject {
         installDismissMonitors()
     }
 
-    private func closePanel() {
+    func closePanel() {
         guard isPanelVisible else { return }
         isPanelVisible = false
         controller.isMenuPanelOpen = false

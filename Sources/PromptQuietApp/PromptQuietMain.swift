@@ -1,5 +1,4 @@
 import AppKit
-import SwiftUI
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -8,18 +7,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let appController = AppController()
+        let statusController = StatusBarController(controller: appController)
+        appController.onRequestCloseMenu = { [weak statusController] in
+            statusController?.closePanel()
+        }
         self.controller = appController
-        self.statusBarController = StatusBarController(controller: appController)
+        self.statusBarController = statusController
     }
 }
 
 @main
-struct PromptQuietMain: App {
-    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-
-    var body: some Scene {
-        Settings {
-            EmptyView()
-        }
+enum PromptQuietMain {
+    static func main() {
+        let app = NSApplication.shared
+        app.setActivationPolicy(.accessory)
+        let delegate = MainActor.assumeIsolated { AppDelegate() }
+        app.delegate = delegate
+        app.run()
     }
 }

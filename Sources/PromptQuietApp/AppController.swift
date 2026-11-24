@@ -20,6 +20,7 @@ final class AppController: ObservableObject {
     @Published var launchAtLogin: Bool = false
     @Published var popoverArrowX: CGFloat = 164
     var isMenuPanelOpen: Bool = false
+    var onRequestCloseMenu: (() -> Void)?
 
     private let pauseBackend = NotificationCenterPauseBackend()
     private let streamBackend = ScreenCaptureStreamBackend()
@@ -64,11 +65,14 @@ final class AppController: ObservableObject {
         case .typingPaused, .postSendPaused:
             return "bell.slash.fill"
         case .manuallyPaused:
-            return "bell.badge.slash"
+            return "moon.zzz.fill"
         }
     }
 
     var statusHeadline: String {
+        if state == .manuallyPaused {
+            return "Insane Focus"
+        }
         if !settings.isEnabled {
             return "Auto-Pause Off"
         }
@@ -86,7 +90,7 @@ final class AppController: ObservableObject {
             }
             return "Prompt Sent (\(appName))"
         case .manuallyPaused:
-            return "Manually Paused"
+            return "Insane Focus"
         }
     }
 
@@ -170,9 +174,17 @@ final class AppController: ObservableObject {
 
     func toggleManualPause() {
         let shouldPause = (state != .manuallyPaused)
-        let effect = stateMachine.setManualPause(shouldPause)
+        setInsaneFocus(shouldPause)
+    }
+
+    func setInsaneFocus(_ enabled: Bool) {
+        let effect = stateMachine.setManualPause(enabled)
         syncPublishedState(now: Date())
         applyEffect(effect)
+    }
+
+    func refreshPermissions() {
+        inputMonitor.refreshAccessibilityAndTap()
     }
 
     func resumeNow() {
@@ -192,6 +204,7 @@ final class AppController: ObservableObject {
     }
 
     func grantAccessibilityPermission() {
+        onRequestCloseMenu?()
         inputMonitor.requestAccessibilityPermission()
     }
 
@@ -249,11 +262,22 @@ final class AppController: ObservableObject {
     }
 
     private func handleKeyAction(_ action: KeyAction, appInfo: RunningAppInfo) {
-        // Do not trigger suppression when typing inside PromptQuiet's own menu panel (e.g., custom bundle ID field).
-        guard !isMenuPanelOpen || NSApp.keyWindow == nil else { return }
+        let liveFrontmost = NSWorkspace.shared.frontmostApplication
+        let effectiveApp = RunningAppInfo(
+            bundleIdentifier: liveFrontmost?.bundleIdentifier ?? appInfo.bundleIdentifier,
+            localizedName: liveFrontmost?.localizedName ?? appInfo.localizedName
+        )
+
+        if effectiveApp.bundleIdentifier == Bundle.main.bundleIdentifier {
+            return
+        }
+        // Do not trigger suppression when typing inside PromptQuiet's own text input.
+        if isMenuPanelOpen, NSApp.keyWindow?.firstResponder is NSTextView {
+            return
+        }
 
         let now = Date()
-        let matchedName = AppMatcher.matches(appInfo, settings: settings)
+        let matchedName = AppMatcher.matches(effectiveApp, settings: settings)
         let effect = stateMachine.handleKeyAction(action, matchedAppName: matchedName, now: now)
         syncPublishedState(now: now)
         applyEffect(effect)

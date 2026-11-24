@@ -3,6 +3,55 @@ import SwiftUI
 
 private let accentGreen = Color(red: 0.16, green: 0.80, blue: 0.25)
 
+private struct TooltipPayload: @unchecked Sendable {
+    let text: String
+    let anchor: Anchor<CGRect>
+}
+
+private struct TooltipAnchorKey: PreferenceKey {
+    static let defaultValue: TooltipPayload? = nil
+
+    static func reduce(value: inout TooltipPayload?, nextValue: () -> TooltipPayload?) {
+        value = value ?? nextValue()
+    }
+}
+
+private struct HoverTooltipModifier: ViewModifier {
+    let text: String
+    @State private var isHovering = false
+
+    func body(content: Content) -> some View {
+        content
+            .onHover { isHovering = $0 }
+            .anchorPreference(key: TooltipAnchorKey.self, value: .bounds) { anchor in
+                isHovering ? TooltipPayload(text: text, anchor: anchor) : nil
+            }
+    }
+}
+
+private extension View {
+    func hoverTooltip(_ text: String) -> some View {
+        modifier(HoverTooltipModifier(text: text))
+    }
+}
+
+private struct InfoHintIcon: View {
+    let text: String
+    @State private var isHovering = false
+
+    var body: some View {
+        Image(systemName: "info.circle")
+            .font(.system(size: 11.5))
+            .foregroundStyle(isHovering ? Color.primary : Color.secondary.opacity(0.75))
+            .frame(width: 16, height: 16)
+            .contentShape(Rectangle())
+            .onHover { isHovering = $0 }
+            .anchorPreference(key: TooltipAnchorKey.self, value: .bounds) { anchor in
+                isHovering ? TooltipPayload(text: text, anchor: anchor) : nil
+            }
+    }
+}
+
 private struct PopoverBubbleShape: Shape {
     let arrowX: CGFloat
     var arrowWidth: CGFloat = 26
@@ -78,64 +127,6 @@ private struct PopoverBubbleShape: Shape {
     }
 }
 
-private struct RingGaugeView: View {
-    let progress: Double
-    let iconSystemName: String?
-    let centerText: String?
-    let label: String
-    let ringColor: Color
-    var onTap: (() -> Void)? = nil
-
-    @State private var isHovering = false
-
-    var body: some View {
-        let gauge = ZStack {
-            Circle()
-                .stroke(Color.primary.opacity(0.11), lineWidth: 6.5)
-
-            Circle()
-                .trim(from: 0, to: CGFloat(min(max(progress, 0), 1)))
-                .stroke(
-                    ringColor,
-                    style: StrokeStyle(lineWidth: 6.5, lineCap: .round)
-                )
-                .rotationEffect(.degrees(-90))
-                .animation(.easeOut(duration: 0.2), value: progress)
-
-            VStack(spacing: 3) {
-                if let centerText {
-                    Text(centerText)
-                        .font(.system(size: 15, weight: .semibold, design: .rounded))
-                        .monospacedDigit()
-                        .foregroundStyle(.primary)
-                } else if let iconSystemName {
-                    Image(systemName: iconSystemName)
-                        .font(.system(size: 17, weight: .regular))
-                        .foregroundStyle(.primary.opacity(0.85))
-                }
-
-                Text(label)
-                    .font(.system(size: 9.5, weight: .medium))
-                    .tracking(0.4)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .frame(width: 74, height: 74)
-        .scaleEffect(onTap != nil && isHovering ? 1.03 : 1.0)
-        .animation(.easeOut(duration: 0.12), value: isHovering)
-
-        if let onTap {
-            Button(action: onTap) {
-                gauge
-            }
-            .buttonStyle(.plain)
-            .onHover { isHovering = $0 }
-        } else {
-            gauge
-        }
-    }
-}
-
 private struct MinimalSlider: View {
     @Binding var value: Double
     let range: ClosedRange<Double>
@@ -187,13 +178,17 @@ private struct MinimalSlider: View {
 
 private struct SwitchRow: View {
     let title: String
+    var hint: String? = nil
     @Binding var isOn: Bool
 
     var body: some View {
-        HStack {
+        HStack(spacing: 5) {
             Text(title)
-                .font(.system(size: 13.5))
+                .font(.system(size: 13))
                 .foregroundStyle(.primary.opacity(0.9))
+            if let hint {
+                InfoHintIcon(text: hint)
+            }
             Spacer()
             Toggle("", isOn: $isOn)
                 .labelsHidden()
@@ -226,34 +221,36 @@ private struct HoverTextButton: View {
 
 private struct TimerSliderRow: View {
     let title: String
+    let hint: String
     let value: Int
-    let sliderRange: ClosedRange<Double>
-    let clampedRange: ClosedRange<Int>
+    let range: ClosedRange<Int>
+    let zeroLabel: String?
     let onChange: (Int) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
-            HStack(spacing: 6) {
+            HStack(spacing: 5) {
                 Text(title)
                     .font(.system(size: 13))
                     .foregroundStyle(.primary.opacity(0.9))
+                InfoHintIcon(text: hint)
 
                 Spacer()
 
                 HStack(spacing: 6) {
                     HoverTextButton(title: "−", color: .secondary, font: .system(size: 14, weight: .medium)) {
-                        onChange(max(clampedRange.lowerBound, value - 1))
+                        onChange(max(range.lowerBound, value - 1))
                     }
                     .frame(width: 16)
 
-                    Text("\(value)s")
+                    Text(formattedValue)
                         .font(.system(size: 12.5, weight: .medium, design: .rounded))
                         .monospacedDigit()
                         .foregroundStyle(.secondary)
-                        .frame(minWidth: 32, alignment: .center)
+                        .frame(minWidth: 38, alignment: .center)
 
                     HoverTextButton(title: "+", color: .secondary, font: .system(size: 14, weight: .medium)) {
-                        onChange(min(clampedRange.upperBound, value + 1))
+                        onChange(min(range.upperBound, value + 1))
                     }
                     .frame(width: 16)
                 }
@@ -261,13 +258,20 @@ private struct TimerSliderRow: View {
 
             MinimalSlider(
                 value: Binding(
-                    get: { Double(min(max(value, Int(sliderRange.lowerBound)), Int(sliderRange.upperBound))) },
+                    get: { Double(min(max(value, range.lowerBound), range.upperBound)) },
                     set: { onChange(Int($0.rounded())) }
                 ),
-                range: sliderRange,
+                range: Double(range.lowerBound)...Double(range.upperBound),
                 accentColor: accentGreen
             )
         }
+    }
+
+    private var formattedValue: String {
+        if value <= 0, let zeroLabel {
+            return zeroLabel
+        }
+        return "\(value)s"
     }
 }
 
@@ -288,11 +292,12 @@ private struct EnginePillPicker: View {
                         .padding(.vertical, 4)
                         .background(
                             Capsule()
-                                .fill(isSelected ? Color.white.opacity(0.85) : Color.clear)
+                                .fill(isSelected ? Color.white.opacity(0.88) : Color.clear)
                                 .shadow(color: isSelected ? .black.opacity(0.08) : .clear, radius: 1.5, y: 0.5)
                         )
                 }
                 .buttonStyle(.plain)
+                .hoverTooltip(tooltipText(for: mode))
             }
         }
         .padding(2)
@@ -300,6 +305,15 @@ private struct EnginePillPicker: View {
             Capsule()
                 .fill(Color.primary.opacity(0.09))
         )
+    }
+
+    private func tooltipText(for mode: SuppressionMode) -> String {
+        switch mode {
+        case .notificationCenterPause:
+            return "Silent Daemon Pause (SIGSTOP): Freezes NotificationCenter while typing so zero banners and zero menu-bar icons appear. Queued alerts arrive when resumed. Auto-restores on idle, sleep, or quit."
+        case .screenCaptureStream:
+            return "ScreenCaptureKit Mode (SCStream): Starts an invisible 2×2 @ 1fps capture stream so macOS suppresses banners as if screen sharing. Shows a purple menu-bar indicator while active and requires 'Allow notifications when mirroring or sharing' OFF in System Settings → Notifications."
+        }
     }
 }
 
@@ -314,7 +328,9 @@ struct MenuBarView: View {
         let bubbleShape = PopoverBubbleShape(arrowX: controller.popoverArrowX)
 
         VStack(spacing: 0) {
-            heroSection
+            headerSection
+            hairlineDivider
+            insaneFocusSection
             hairlineDivider
             appsSection
             hairlineDivider
@@ -330,6 +346,13 @@ struct MenuBarView: View {
         .background(bubbleShape.fill(.thickMaterial))
         .clipShape(bubbleShape)
         .overlay(bubbleShape.stroke(Color.primary.opacity(0.12), lineWidth: 1))
+        .overlayPreferenceValue(TooltipAnchorKey.self) { payload in
+            GeometryReader { proxy in
+                if let payload {
+                    tooltipCard(payload: payload, in: proxy)
+                }
+            }
+        }
     }
 
     private var hairlineDivider: some View {
@@ -338,70 +361,111 @@ struct MenuBarView: View {
             .frame(height: 1)
     }
 
-    private var heroSection: some View {
-        VStack(spacing: 12) {
-            HStack(spacing: 22) {
-                RingGaugeView(
-                    progress: statusRingProgress,
-                    iconSystemName: statusRingIcon,
-                    centerText: nil,
-                    label: statusRingLabel,
-                    ringColor: statusRingColor,
-                    onTap: {
-                        if controller.isSuppressing {
-                            controller.resumeNow()
-                        } else {
-                            controller.toggleManualPause()
-                        }
-                    }
-                )
+    private var headerSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Circle()
+                    .fill(statusDotColor)
+                    .frame(width: 8, height: 8)
 
-                RingGaugeView(
-                    progress: typingRingProgress,
-                    iconSystemName: typingRingCenterText == nil ? "keyboard" : nil,
-                    centerText: typingRingCenterText,
-                    label: typingRingLabel,
-                    ringColor: accentGreen
-                )
+                Text("PromptQuiet")
+                    .font(.system(size: 13.5, weight: .semibold))
 
-                RingGaugeView(
-                    progress: sendRingProgress,
-                    iconSystemName: sendRingCenterText == nil ? "paperplane" : nil,
-                    centerText: sendRingCenterText,
-                    label: sendRingLabel,
-                    ringColor: accentGreen
-                )
+                Spacer()
+
+                Text(compactStatusText)
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(statusTextColor)
             }
 
             if !controller.isAccessibilityTrusted {
-                Button {
-                    controller.grantAccessibilityPermission()
-                } label: {
-                    Label("Grant Accessibility Access", systemImage: "hand.raised.fill")
-                        .font(.system(size: 11.5, weight: .medium))
-                        .foregroundStyle(.orange)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
-                        .background(Capsule().fill(.orange.opacity(0.14)))
+                HStack(spacing: 8) {
+                    Button {
+                        controller.grantAccessibilityPermission()
+                    } label: {
+                        Label("Grant Accessibility Access", systemImage: "hand.raised.fill")
+                            .font(.system(size: 11.5, weight: .medium))
+                            .foregroundStyle(.orange)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .frame(maxWidth: .infinity)
+                            .background(Capsule().fill(.orange.opacity(0.14)))
+                    }
+                    .buttonStyle(.plain)
+                    .hoverTooltip("Opens macOS Accessibility settings so PromptQuiet can detect keystrokes in Claude, Antigravity, and Cursor. No typed text is ever read.")
+
+                    Button {
+                        controller.refreshPermissions()
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.system(size: 11.5, weight: .medium))
+                            .foregroundStyle(.secondary)
+                            .padding(6)
+                            .background(Circle().fill(Color.primary.opacity(0.07)))
+                    }
+                    .buttonStyle(.plain)
+                    .hoverTooltip("Re-check Accessibility permission status immediately.")
                 }
-                .buttonStyle(.plain)
             }
 
             if let error = controller.backendError {
                 Text(error)
                     .font(.system(size: 11))
                     .foregroundStyle(.red)
-                    .multilineTextAlignment(.center)
                     .lineLimit(2)
             }
         }
         .padding(.horizontal, 20)
-        .padding(.top, 16)
-        .padding(.bottom, 16)
+        .padding(.top, 14)
+        .padding(.bottom, 11)
+    }
+
+    private var insaneFocusSection: some View {
+        HStack(spacing: 6) {
+            Toggle(
+                isOn: Binding(
+                    get: { controller.isManuallyPaused },
+                    set: { controller.setInsaneFocus($0) }
+                )
+            ) {
+                Text("Insane Focus Mode")
+                    .font(.system(size: 13, weight: .medium))
+            }
+            .toggleStyle(.checkbox)
+            .tint(accentGreen)
+
+            InfoHintIcon(
+                text: "Pauses all macOS notifications indefinitely across every app—even when you aren't typing—until you uncheck this box."
+            )
+
+            Spacer()
+
+            if controller.isManuallyPaused {
+                Text("Indefinite")
+                    .font(.system(size: 10.5, weight: .semibold))
+                    .foregroundStyle(.purple)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 2)
+                    .background(Capsule().fill(.purple.opacity(0.14)))
+            }
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 10)
     }
 
     private var appsSection: some View {
-        VStack(alignment: .leading, spacing: 9) {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 5) {
+                Text("Target Apps")
+                    .font(.system(size: 11.5, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                InfoHintIcon(
+                    text: "Typing inside any enabled app automatically silences notifications. Add custom bundle IDs for other tools."
+                )
+                Spacer()
+            }
+
             ForEach(BuiltInApp.allCases) { app in
                 SwitchRow(
                     title: app.displayName,
@@ -474,63 +538,45 @@ struct MenuBarView: View {
             }
         }
         .padding(.horizontal, 20)
-        .padding(.vertical, 12)
+        .padding(.vertical, 11)
     }
 
     private var timersSection: some View {
         VStack(alignment: .leading, spacing: 11) {
             TimerSliderRow(
                 title: "Typing Pause",
+                hint: "Seconds to wait after your last keystroke before turning notifications back on (3s to 60s). Pressing Shift+Return keeps this timer.",
                 value: controller.settings.typingPauseSeconds,
-                sliderRange: 5...120,
-                clampedRange: PromptQuietSettings.typingPauseRange
+                range: PromptQuietSettings.typingPauseRange,
+                zeroLabel: nil
             ) { newValue in
                 controller.setTypingPauseSeconds(newValue)
             }
 
             TimerSliderRow(
                 title: "After Prompt Sent",
+                hint: "Seconds to keep notifications off after pressing Return or Cmd+Return to send a prompt. Set to None (0s) to turn notifications back on immediately upon sending.",
                 value: controller.settings.postSendPauseSeconds,
-                sliderRange: 1...30,
-                clampedRange: PromptQuietSettings.postSendPauseRange
+                range: PromptQuietSettings.postSendPauseRange,
+                zeroLabel: "None"
             ) { newValue in
                 controller.setPostSendPauseSeconds(newValue)
             }
         }
+        .opacity(controller.isManuallyPaused ? 0.45 : 1.0)
         .padding(.horizontal, 20)
-        .padding(.vertical, 12)
+        .padding(.vertical, 11)
     }
 
     private var preferencesSection: some View {
         VStack(alignment: .leading, spacing: 9) {
-            SwitchRow(
-                title: "Auto-Silence Typing",
-                isOn: Binding(
-                    get: { controller.settings.isEnabled },
-                    set: { controller.setEnabled($0) }
-                )
-            )
-
-            SwitchRow(
-                title: "Menu Bar Countdown",
-                isOn: Binding(
-                    get: { controller.settings.showCountdownInMenuBar },
-                    set: { controller.setShowCountdownInMenuBar($0) }
-                )
-            )
-
-            SwitchRow(
-                title: "Launch at Login",
-                isOn: Binding(
-                    get: { controller.launchAtLogin },
-                    set: { controller.setLaunchAtLogin($0) }
-                )
-            )
-
-            HStack {
-                Text("Engine")
-                    .font(.system(size: 13.5))
+            HStack(spacing: 5) {
+                Text("Mode")
+                    .font(.system(size: 13))
                     .foregroundStyle(.primary.opacity(0.9))
+                InfoHintIcon(
+                    text: "Choose how PromptQuiet suppresses banners. Hover Silent or Stream to compare both engines."
+                )
                 Spacer()
                 EnginePillPicker(
                     selection: Binding(
@@ -539,15 +585,41 @@ struct MenuBarView: View {
                     )
                 )
             }
-            .padding(.top, 1)
+
+            SwitchRow(
+                title: "Auto-Silence Typing",
+                hint: "Enables automatic keystroke-triggered notification pausing in your selected target apps.",
+                isOn: Binding(
+                    get: { controller.settings.isEnabled },
+                    set: { controller.setEnabled($0) }
+                )
+            )
+
+            SwitchRow(
+                title: "Menu Bar Countdown",
+                hint: "Shows the remaining countdown seconds next to the PromptQuiet icon in your top menu bar.",
+                isOn: Binding(
+                    get: { controller.settings.showCountdownInMenuBar },
+                    set: { controller.setShowCountdownInMenuBar($0) }
+                )
+            )
+
+            SwitchRow(
+                title: "Launch at Login",
+                hint: "Starts PromptQuiet automatically in the top menu bar when you log in to macOS.",
+                isOn: Binding(
+                    get: { controller.launchAtLogin },
+                    set: { controller.setLaunchAtLogin($0) }
+                )
+            )
         }
         .padding(.horizontal, 20)
-        .padding(.vertical, 12)
+        .padding(.vertical, 11)
     }
 
     private var footerSection: some View {
         HStack {
-            if controller.isSuppressing {
+            if controller.isSuppressing && !controller.isManuallyPaused {
                 HoverTextButton(
                     title: "Resume Now",
                     color: accentGreen,
@@ -555,10 +627,12 @@ struct MenuBarView: View {
                 ) {
                     controller.resumeNow()
                 }
+                .hoverTooltip("Immediately turn notifications back on and cancel the active countdown.")
             } else {
                 HoverTextButton(title: "Reset Daemon") {
                     controller.forceResumeNotificationCenter()
                 }
+                .hoverTooltip("Safety recovery: immediately sends SIGCONT to NotificationCenter and stops any active stream.")
             }
 
             Spacer()
@@ -568,94 +642,88 @@ struct MenuBarView: View {
             }
         }
         .padding(.horizontal, 20)
-        .padding(.vertical, 11)
+        .padding(.vertical, 10)
     }
 
-    // MARK: - Ring Gauge Derived State
+    @ViewBuilder
+    private func tooltipCard(payload: TooltipPayload, in proxy: GeometryProxy) -> some View {
+        let targetRect = proxy[payload.anchor]
+        let tooltipWidth: CGFloat = 264
+        let halfW = tooltipWidth / 2
+        let centerX = min(max(targetRect.midX, halfW + 12), bubbleWidth - halfW - 12)
+        let showBelow = targetRect.minY < 130
 
-    private var statusRingProgress: Double {
-        if !controller.isAccessibilityTrusted { return 0.25 }
-        if !controller.settings.isEnabled { return 0.08 }
-        switch controller.state {
-        case .idle:
-            return 0.25
-        case .typingPaused, .postSendPaused, .manuallyPaused:
-            return 1.0
-        }
+        Color.clear
+            .frame(width: tooltipWidth, height: 0)
+            .overlay(alignment: showBelow ? .top : .bottom) {
+                Text(payload.text)
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 7)
+                    .frame(width: tooltipWidth, alignment: .leading)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(Color(nsColor: .windowBackgroundColor).opacity(0.98))
+                            .shadow(color: .black.opacity(0.24), radius: 8, y: 3)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .stroke(Color.primary.opacity(0.14), lineWidth: 0.75)
+                    )
+            }
+            .position(
+                x: centerX,
+                y: showBelow ? targetRect.maxY + 6 : targetRect.minY - 6
+            )
+            .allowsHitTesting(false)
+            .transition(.opacity)
     }
 
-    private var statusRingIcon: String {
-        if !controller.isAccessibilityTrusted { return "hand.raised" }
-        if !controller.settings.isEnabled { return "bell.slash" }
+    private var statusDotColor: Color {
         switch controller.state {
-        case .idle:
-            return "bell"
-        case .typingPaused, .postSendPaused:
-            return "bell.slash.fill"
         case .manuallyPaused:
-            return "pause.fill"
-        }
-    }
-
-    private var statusRingLabel: String {
-        if !controller.isAccessibilityTrusted { return "PERMS" }
-        if !controller.settings.isEnabled { return "OFF" }
-        switch controller.state {
-        case .idle:
-            return "READY"
+            return .purple
         case .typingPaused, .postSendPaused:
-            return "QUIET"
+            return accentGreen
+        case .idle:
+            if !controller.isAccessibilityTrusted { return .orange }
+            return controller.settings.isEnabled ? accentGreen : .secondary
+        }
+    }
+
+    private var statusTextColor: Color {
+        switch controller.state {
         case .manuallyPaused:
-            return "PAUSED"
+            return .purple
+        case .typingPaused, .postSendPaused:
+            return accentGreen
+        case .idle:
+            return controller.isAccessibilityTrusted ? .secondary : .orange
         }
     }
 
-    private var statusRingColor: Color {
-        if !controller.isAccessibilityTrusted { return .orange }
-        if !controller.settings.isEnabled { return Color.primary.opacity(0.25) }
-        return accentGreen
-    }
-
-    private var typingRingProgress: Double {
-        if case .typingPaused = controller.state, let remaining = controller.remainingSeconds {
-            return Double(remaining) / Double(max(controller.settings.typingPauseSeconds, 1))
+    private var compactStatusText: String {
+        switch controller.state {
+        case .manuallyPaused:
+            return "Insane Focus"
+        case .typingPaused:
+            if let seconds = controller.remainingSeconds {
+                return "Quiet · \(seconds)s"
+            }
+            return "Quiet"
+        case .postSendPaused:
+            if let seconds = controller.remainingSeconds {
+                return "Sent · \(seconds)s"
+            }
+            return "Sent"
+        case .idle:
+            if !controller.isAccessibilityTrusted {
+                return "Accessibility Needed"
+            }
+            return controller.settings.isEnabled ? "Ready" : "Paused"
         }
-        return min(Double(controller.settings.typingPauseSeconds) / 60.0, 1.0)
-    }
-
-    private var typingRingCenterText: String? {
-        if case .typingPaused = controller.state, let remaining = controller.remainingSeconds {
-            return "\(remaining)s"
-        }
-        return nil
-    }
-
-    private var typingRingLabel: String {
-        if case .typingPaused = controller.state {
-            return "TYPING"
-        }
-        return "\(controller.settings.typingPauseSeconds)S IDLE"
-    }
-
-    private var sendRingProgress: Double {
-        if case .postSendPaused = controller.state, let remaining = controller.remainingSeconds {
-            return Double(remaining) / Double(max(controller.settings.postSendPauseSeconds, 1))
-        }
-        return min(Double(controller.settings.postSendPauseSeconds) / 30.0, 1.0)
-    }
-
-    private var sendRingCenterText: String? {
-        if case .postSendPaused = controller.state, let remaining = controller.remainingSeconds {
-            return "\(remaining)s"
-        }
-        return nil
-    }
-
-    private var sendRingLabel: String {
-        if case .postSendPaused = controller.state {
-            return "SENDING"
-        }
-        return "\(controller.settings.postSendPauseSeconds)S SEND"
     }
 
     private func submitCustomBundleID() {
