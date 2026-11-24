@@ -1,22 +1,25 @@
+import AppKit
 import SwiftUI
+
+@MainActor
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    private var controller: AppController?
+    private var statusBarController: StatusBarController?
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        let appController = AppController()
+        self.controller = appController
+        self.statusBarController = StatusBarController(controller: appController)
+    }
+}
 
 @main
 struct PromptQuietMain: App {
-    @StateObject private var controller = AppController()
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     var body: some Scene {
-        MenuBarExtra {
-            MenuBarView(controller: controller)
-        } label: {
-            HStack(spacing: 4) {
-                Image(systemName: controller.menuBarSymbolName)
-                if controller.settings.showCountdownInMenuBar,
-                   let seconds = controller.remainingSeconds {
-                    Text("\(seconds)s")
-                        .monospacedDigit()
-                }
-            }
+        Settings {
+            EmptyView()
         }
-        .menuBarExtraStyle(.window)
     }
 }

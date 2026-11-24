@@ -35,6 +35,15 @@ struct MenuBarView: View {
         }
         .padding(14)
         .frame(width: 348)
+        .fixedSize(horizontal: false, vertical: true)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(.regularMaterial)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
+        )
     }
 
     private var statusHeader: some View {
@@ -154,8 +163,7 @@ struct MenuBarView: View {
                         get: { Double(min(controller.settings.typingPauseSeconds, 120)) },
                         set: { controller.setTypingPauseSeconds(Int($0.rounded())) }
                     ),
-                    in: 5...120,
-                    step: 1
+                    in: 5...120
                 )
 
                 HStack(spacing: 6) {
@@ -192,8 +200,7 @@ struct MenuBarView: View {
                         get: { Double(min(controller.settings.postSendPauseSeconds, 30)) },
                         set: { controller.setPostSendPauseSeconds(Int($0.rounded())) }
                     ),
-                    in: 1...30,
-                    step: 1
+                    in: 1...30
                 )
 
                 HStack(spacing: 6) {

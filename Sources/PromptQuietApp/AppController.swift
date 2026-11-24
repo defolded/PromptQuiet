@@ -18,6 +18,7 @@ final class AppController: ObservableObject {
     @Published private(set) var lastObservedExternalApp: RunningAppInfo?
     @Published private(set) var backendError: String?
     @Published var launchAtLogin: Bool = false
+    var isMenuPanelOpen: Bool = false
 
     private let pauseBackend = NotificationCenterPauseBackend()
     private let streamBackend = ScreenCaptureStreamBackend()
@@ -247,6 +248,9 @@ final class AppController: ObservableObject {
     }
 
     private func handleKeyAction(_ action: KeyAction, appInfo: RunningAppInfo) {
+        // Do not trigger suppression when typing inside PromptQuiet's own menu panel (e.g., custom bundle ID field).
+        guard !isMenuPanelOpen || NSApp.keyWindow == nil else { return }
+
         let now = Date()
         let matchedName = AppMatcher.matches(appInfo, settings: settings)
         let effect = stateMachine.handleKeyAction(action, matchedAppName: matchedName, now: now)
