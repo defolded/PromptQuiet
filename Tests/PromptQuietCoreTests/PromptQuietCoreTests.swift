@@ -173,8 +173,9 @@ struct PromptQuietCoreTests {
         var settings = PromptQuietSettings()
         var machine = SuppressionStateMachine(settings: settings)
 
-        #expect(machine.setManualPause(true) == .suppress)
-        #expect(machine.state == .manuallyPaused)
+        #expect(machine.setManualPause(true, now: baseDate) == .suppress)
+        #expect(machine.state == .manuallyPaused(expiresAt: nil))
+        #expect(machine.isManuallyPaused)
         #expect(machine.remainingSeconds(at: baseDate) == nil)
 
         #expect(machine.tick(now: baseDate.addingTimeInterval(10_000)) == .none)
@@ -183,9 +184,50 @@ struct PromptQuietCoreTests {
 
         settings.isEnabled = false
         #expect(machine.updateSettings(settings, now: baseDate) == .none)
-        #expect(machine.state == .manuallyPaused)
+        #expect(machine.state == .manuallyPaused(expiresAt: nil))
 
-        #expect(machine.setManualPause(false) == .resume)
+        #expect(machine.setManualPause(false, now: baseDate) == .resume)
+        #expect(machine.state == .idle)
+    }
+
+    @Test("Timed Insane Focus Mode presets suppress for exact duration and resume automatically")
+    func insaneFocusTimedPresets() {
+        let expectedSeconds: [InsaneFocusDuration: Int] = [
+            .fiveMinutes: 300,
+            .fifteenMinutes: 900,
+            .thirtyMinutes: 1800,
+            .fortyFiveMinutes: 2700,
+            .oneHour: 3600
+        ]
+        for (preset, seconds) in expectedSeconds {
+            #expect(preset.seconds == seconds)
+        }
+
+        var settings = PromptQuietSettings()
+        var machine = SuppressionStateMachine(settings: settings)
+
+        // Start 15-minute Insane Focus
+        #expect(machine.setManualPause(true, durationSeconds: InsaneFocusDuration.fifteenMinutes.timeInterval, now: baseDate) == .suppress)
+        #expect(machine.isManuallyPaused)
+        #expect(machine.remainingSeconds(at: baseDate) == 900)
+
+        // Typing, promptSent, and disabling auto-silence do not cancel timed Insane Focus
+        #expect(machine.handleKeyAction(.typing, matchedAppName: "Claude", now: baseDate.addingTimeInterval(10)) == .none)
+        #expect(machine.handleKeyAction(.promptSent, matchedAppName: "Claude", now: baseDate.addingTimeInterval(12)) == .none)
+        settings.isEnabled = false
+        #expect(machine.updateSettings(settings, now: baseDate.addingTimeInterval(20)) == .none)
+
+        // Still paused at 899s, expires cleanly at 900s
+        #expect(machine.tick(now: baseDate.addingTimeInterval(899)) == .none)
+        #expect(machine.remainingSeconds(at: baseDate.addingTimeInterval(899)) == 1)
+        #expect(machine.tick(now: baseDate.addingTimeInterval(900)) == .resume)
+        #expect(machine.state == .idle)
+
+        // Switching duration while already paused updates expiry without re-suppressing; early cancel resumes
+        #expect(machine.setManualPause(true, durationSeconds: InsaneFocusDuration.fiveMinutes.timeInterval, now: baseDate) == .suppress)
+        #expect(machine.setManualPause(true, durationSeconds: InsaneFocusDuration.thirtyMinutes.timeInterval, now: baseDate) == .none)
+        #expect(machine.remainingSeconds(at: baseDate) == 1800)
+        #expect(machine.setManualPause(false, now: baseDate) == .resume)
         #expect(machine.state == .idle)
     }
 

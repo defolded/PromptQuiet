@@ -17,6 +17,7 @@ final class AppController: ObservableObject {
     @Published private(set) var isEventTapActive: Bool = false
     @Published private(set) var lastObservedExternalApp: RunningAppInfo?
     @Published private(set) var backendError: String?
+    @Published private(set) var activeInsaneFocusPreset: InsaneFocusDuration?
     @Published var launchAtLogin: Bool = false
     @Published var popoverArrowX: CGFloat = 164
     var isMenuPanelOpen: Bool = false
@@ -74,28 +75,61 @@ final class AppController: ObservableObject {
     }
 
     var statusHeadline: String {
-        if state == .manuallyPaused {
-            return "Insane Focus"
-        }
-        if !settings.isEnabled {
-            return "Auto-Pause Off"
-        }
         switch state {
+        case .manuallyPaused(let expiresAt):
+            if expiresAt != nil, let formatted = formattedRemainingTime {
+                return "Insane Focus — \(formatted)"
+            }
+            return "Insane Focus"
         case .idle:
+            if !settings.isEnabled {
+                return "Auto-Pause Off"
+            }
             return isAccessibilityTrusted ? "Monitoring Ready" : "Accessibility Required"
         case .typingPaused(_, let appName):
+            if !settings.isEnabled {
+                return "Auto-Pause Off"
+            }
             if let seconds = remainingSeconds {
                 return "Typing in \(appName) — \(seconds)s"
             }
             return "Typing in \(appName)"
         case .postSendPaused(_, let appName):
+            if !settings.isEnabled {
+                return "Auto-Pause Off"
+            }
             if let seconds = remainingSeconds {
                 return "Prompt Sent (\(appName)) — \(seconds)s"
             }
             return "Prompt Sent (\(appName))"
-        case .manuallyPaused:
-            return "Insane Focus"
         }
+    }
+
+    var formattedRemainingTime: String? {
+        guard let seconds = remainingSeconds else { return nil }
+        if seconds >= 3600 {
+            let hours = seconds / 3600
+            let minutes = (seconds % 3600) / 60
+            let secs = seconds % 60
+            return String(format: "%d:%02d:%02d", hours, minutes, secs)
+        }
+        if seconds >= 60 {
+            let minutes = seconds / 60
+            let secs = seconds % 60
+            return String(format: "%d:%02d", minutes, secs)
+        }
+        return "\(seconds)s"
+    }
+
+    var menuBarCountdownText: String? {
+        guard let seconds = remainingSeconds else { return nil }
+        if seconds >= 3600 {
+            return "\(seconds / 3600)h"
+        }
+        if seconds >= 60 {
+            return "\((seconds + 59) / 60)m"
+        }
+        return "\(seconds)s"
     }
 
     var isSuppressing: Bool {
@@ -103,7 +137,7 @@ final class AppController: ObservableObject {
     }
 
     var isManuallyPaused: Bool {
-        state == .manuallyPaused
+        state.isManuallyPaused
     }
 
     func setEnabled(_ enabled: Bool) {
@@ -179,13 +213,21 @@ final class AppController: ObservableObject {
     }
 
     func toggleManualPause() {
-        let shouldPause = (state != .manuallyPaused)
-        setInsaneFocus(shouldPause)
+        setInsaneFocus(!state.isManuallyPaused)
     }
 
     func setInsaneFocus(_ enabled: Bool) {
+        activeInsaneFocusPreset = nil
         let effect = stateMachine.setManualPause(enabled)
         syncPublishedState(now: Date())
+        applyEffect(effect)
+    }
+
+    func startTimedInsaneFocus(_ duration: InsaneFocusDuration) {
+        let now = Date()
+        activeInsaneFocusPreset = duration
+        let effect = stateMachine.setManualPause(true, durationSeconds: duration.timeInterval, now: now)
+        syncPublishedState(now: now)
         applyEffect(effect)
     }
 
@@ -355,13 +397,23 @@ final class AppController: ObservableObject {
     private func syncPublishedState(now: Date) {
         state = stateMachine.state
         remainingSeconds = stateMachine.remainingSeconds(at: now)
+        if !state.isManuallyPaused {
+            activeInsaneFocusPreset = nil
+        }
         updateTickTimer()
         onStatusBarUpdate?()
     }
 
     private func updateTickTimer() {
+        let needsTimer: Bool
         switch state {
-        case .typingPaused, .postSendPaused:
+        case .typingPaused, .postSendPaused, .manuallyPaused(_?):
+            needsTimer = true
+        case .idle, .manuallyPaused(nil):
+            needsTimer = false
+        }
+
+        if needsTimer {
             if tickTimer == nil {
                 let timer = Timer(timeInterval: 0.2, repeats: true) { [weak self] _ in
                     Task { @MainActor [weak self] in
@@ -371,7 +423,7 @@ final class AppController: ObservableObject {
                 RunLoop.main.add(timer, forMode: .common)
                 tickTimer = timer
             }
-        case .idle, .manuallyPaused:
+        } else {
             tickTimer?.invalidate()
             tickTimer = nil
         }

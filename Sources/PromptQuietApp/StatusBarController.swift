@@ -110,12 +110,12 @@ final class StatusBarController: NSObject {
         button.image = image
 
         if controller.settings.showCountdownInMenuBar,
-           let seconds = controller.remainingSeconds {
-            statusItem.length = 44
+           let countdownText = controller.menuBarCountdownText {
+            statusItem.length = 46
             let attributes: [NSAttributedString.Key: Any] = [
                 .font: NSFont.monospacedDigitSystemFont(ofSize: 11.5, weight: .medium)
             ]
-            button.attributedTitle = NSAttributedString(string: " \(seconds)s", attributes: attributes)
+            button.attributedTitle = NSAttributedString(string: " \(countdownText)", attributes: attributes)
             button.imagePosition = .imageLeading
         } else {
             statusItem.length = NSStatusItem.variableLength

@@ -334,6 +334,49 @@ private struct EnginePillPicker: View {
     }
 }
 
+private struct InsaneFocusDurationRow: View {
+    @Environment(\.colorScheme) private var colorScheme
+    let activePreset: InsaneFocusDuration?
+    let onSelect: (InsaneFocusDuration) -> Void
+
+    var body: some View {
+        HStack(spacing: 6) {
+            ForEach(InsaneFocusDuration.allCases) { preset in
+                let isSelected = (activePreset == preset)
+                Button {
+                    onSelect(preset)
+                } label: {
+                    Text(preset.shortLabel)
+                        .font(.system(size: 11.5, weight: isSelected ? .semibold : .medium, design: .rounded))
+                        .foregroundStyle(isSelected ? Color.purple : Color.secondary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 4)
+                        .background(
+                            Capsule()
+                                .fill(backgroundFill(isSelected: isSelected))
+                                .overlay(
+                                    Capsule()
+                                        .strokeBorder(
+                                            isSelected ? Color.purple.opacity(0.45) : Color.primary.opacity(colorScheme == .dark ? 0.12 : 0.08),
+                                            lineWidth: 0.75
+                                        )
+                                )
+                        )
+                }
+                .buttonStyle(.plain)
+                .hoverTooltip("Turn on Insane Focus Mode for \(preset.descriptionLabel). Notifications resume automatically when the timer ends.")
+            }
+        }
+    }
+
+    private func backgroundFill(isSelected: Bool) -> Color {
+        if isSelected {
+            return Color.purple.opacity(colorScheme == .dark ? 0.24 : 0.14)
+        }
+        return colorScheme == .dark ? Color.white.opacity(0.06) : Color.primary.opacity(0.05)
+    }
+}
+
 struct MenuBarView: View {
     @ObservedObject var controller: AppController
     @State private var isAddingCustomApp = false
@@ -458,32 +501,39 @@ struct MenuBarView: View {
     }
 
     private var insaneFocusSection: some View {
-        HStack(spacing: 6) {
-            Toggle(
-                isOn: Binding(
-                    get: { controller.isManuallyPaused },
-                    set: { controller.setInsaneFocus($0) }
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Toggle(
+                    isOn: Binding(
+                        get: { controller.isManuallyPaused },
+                        set: { controller.setInsaneFocus($0) }
+                    )
+                ) {
+                    Text("Insane Focus Mode")
+                        .font(.system(size: 13, weight: .medium))
+                }
+                .toggleStyle(.checkbox)
+                .tint(accentGreen)
+
+                InfoHintIcon(
+                    text: "Check to pause all macOS notifications indefinitely until unchecked, or pick a quick duration below (5m–1hr) to resume automatically."
                 )
-            ) {
-                Text("Insane Focus Mode")
-                    .font(.system(size: 13, weight: .medium))
+
+                Spacer()
+
+                if controller.isManuallyPaused {
+                    Text(controller.formattedRemainingTime ?? "Indefinite")
+                        .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+                        .monospacedDigit()
+                        .foregroundStyle(.purple)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 2)
+                        .background(Capsule().fill(.purple.opacity(0.14)))
+                }
             }
-            .toggleStyle(.checkbox)
-            .tint(accentGreen)
 
-            InfoHintIcon(
-                text: "Pauses all macOS notifications indefinitely across every app—even when you aren't typing—until you uncheck this box."
-            )
-
-            Spacer()
-
-            if controller.isManuallyPaused {
-                Text("Indefinite")
-                    .font(.system(size: 10.5, weight: .semibold))
-                    .foregroundStyle(.purple)
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 2)
-                    .background(Capsule().fill(.purple.opacity(0.14)))
+            InsaneFocusDurationRow(activePreset: controller.activeInsaneFocusPreset) { preset in
+                controller.startTimedInsaneFocus(preset)
             }
         }
         .padding(.horizontal, 20)
@@ -751,7 +801,10 @@ struct MenuBarView: View {
 
     private var compactStatusText: String {
         switch controller.state {
-        case .manuallyPaused:
+        case .manuallyPaused(let expiresAt):
+            if expiresAt != nil, let formatted = controller.formattedRemainingTime {
+                return "Focus · \(formatted)"
+            }
             return "Insane Focus"
         case .typingPaused:
             if let seconds = controller.remainingSeconds {

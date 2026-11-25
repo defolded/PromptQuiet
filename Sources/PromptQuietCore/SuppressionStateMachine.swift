@@ -5,7 +5,14 @@ public enum SuppressionState: Equatable, Sendable {
     case idle
     case typingPaused(expiresAt: Date, appName: String)
     case postSendPaused(expiresAt: Date, appName: String)
-    case manuallyPaused
+    case manuallyPaused(expiresAt: Date?)
+
+    public var isManuallyPaused: Bool {
+        if case .manuallyPaused = self {
+            return true
+        }
+        return false
+    }
 }
 
 /// Side effect requested by `SuppressionStateMachine` after a state transition.
@@ -15,7 +22,7 @@ public enum SuppressionEffect: Equatable, Sendable {
     case resume
 }
 
-/// Deterministic state machine controlling 20s stop-typing and 5s post-send notification pauses.
+/// Deterministic state machine controlling stop-typing, post-send, and Insane Focus notification pauses.
 public struct SuppressionStateMachine: Sendable {
     public private(set) var state: SuppressionState = .idle
     public private(set) var settings: PromptQuietSettings
@@ -30,12 +37,18 @@ public struct SuppressionStateMachine: Sendable {
         state != .idle
     }
 
+    public var isManuallyPaused: Bool {
+        state.isManuallyPaused
+    }
+
     public func remainingSeconds(at now: Date) -> Int? {
         switch state {
-        case .typingPaused(let expiresAt, _), .postSendPaused(let expiresAt, _):
+        case .typingPaused(let expiresAt, _),
+             .postSendPaused(let expiresAt, _),
+             .manuallyPaused(let expiresAt?):
             let remaining = expiresAt.timeIntervalSince(now)
             return max(0, Int(ceil(remaining)))
-        case .idle, .manuallyPaused:
+        case .idle, .manuallyPaused(nil):
             return nil
         }
     }
@@ -46,7 +59,7 @@ public struct SuppressionStateMachine: Sendable {
         now: Date
     ) -> SuppressionEffect {
         guard settings.isEnabled,
-              state != .manuallyPaused,
+              !state.isManuallyPaused,
               let appName = matchedAppName else {
             return .none
         }
@@ -79,13 +92,15 @@ public struct SuppressionStateMachine: Sendable {
 
     public mutating func tick(now: Date) -> SuppressionEffect {
         switch state {
-        case .typingPaused(let expiresAt, _), .postSendPaused(let expiresAt, _):
+        case .typingPaused(let expiresAt, _),
+             .postSendPaused(let expiresAt, _),
+             .manuallyPaused(let expiresAt?):
             if now >= expiresAt {
                 state = .idle
                 return .resume
             }
             return .none
-        case .idle, .manuallyPaused:
+        case .idle, .manuallyPaused(nil):
             return .none
         }
     }
@@ -96,13 +111,18 @@ public struct SuppressionStateMachine: Sendable {
         return .resume
     }
 
-    public mutating func setManualPause(_ paused: Bool) -> SuppressionEffect {
+    public mutating func setManualPause(
+        _ paused: Bool,
+        durationSeconds: TimeInterval? = nil,
+        now: Date = Date()
+    ) -> SuppressionEffect {
         if paused {
             let wasIdle = (state == .idle)
-            state = .manuallyPaused
+            let expiresAt = durationSeconds.map { now.addingTimeInterval(max(1, $0)) }
+            state = .manuallyPaused(expiresAt: expiresAt)
             return wasIdle ? .suppress : .none
         } else {
-            guard state == .manuallyPaused else { return .none }
+            guard state.isManuallyPaused else { return .none }
             state = .idle
             return .resume
         }
@@ -113,7 +133,7 @@ public struct SuppressionStateMachine: Sendable {
         normalized.normalize()
         settings = normalized
 
-        if !settings.isEnabled && state != .idle && state != .manuallyPaused {
+        if !settings.isEnabled && state != .idle && !state.isManuallyPaused {
             state = .idle
             return .resume
         }

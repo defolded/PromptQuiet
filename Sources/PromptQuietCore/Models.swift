@@ -75,6 +75,51 @@ public enum BuiltInApp: String, Codable, CaseIterable, Hashable, Sendable, Ident
     }
 }
 
+/// Preset durations for timed Insane Focus Mode.
+public enum InsaneFocusDuration: Int, Codable, CaseIterable, Hashable, Sendable, Identifiable {
+    case fiveMinutes = 5
+    case fifteenMinutes = 15
+    case thirtyMinutes = 30
+    case fortyFiveMinutes = 45
+    case oneHour = 60
+
+    public var id: Int { rawValue }
+
+    public var seconds: Int { rawValue * 60 }
+
+    public var timeInterval: TimeInterval { TimeInterval(seconds) }
+
+    public var shortLabel: String {
+        switch self {
+        case .fiveMinutes:
+            return "5m"
+        case .fifteenMinutes:
+            return "15m"
+        case .thirtyMinutes:
+            return "30m"
+        case .fortyFiveMinutes:
+            return "45m"
+        case .oneHour:
+            return "1hr"
+        }
+    }
+
+    public var descriptionLabel: String {
+        switch self {
+        case .fiveMinutes:
+            return "5 minutes"
+        case .fifteenMinutes:
+            return "15 minutes"
+        case .thirtyMinutes:
+            return "30 minutes"
+        case .fortyFiveMinutes:
+            return "45 minutes"
+        case .oneHour:
+            return "1 hour"
+        }
+    }
+}
+
 /// Lightweight cross-platform representation of the currently active application.
 public struct RunningAppInfo: Sendable, Equatable {
     public let bundleIdentifier: String?
