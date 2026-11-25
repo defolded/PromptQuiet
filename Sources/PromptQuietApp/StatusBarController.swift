@@ -35,6 +35,9 @@ final class StatusBarController: NSObject {
     private var localKeyMonitor: Any?
     private var spaceObserver: NSObjectProtocol?
     private var isPanelVisible = false
+    private var anchoredOriginX: CGFloat?
+    private var anchoredTopY: CGFloat?
+    private var anchoredVisibleMinY: CGFloat = 8
 
     init(controller: AppController) {
         self.controller = controller
@@ -67,7 +70,7 @@ final class StatusBarController: NSObject {
         hostingView.sizingOptions = [.intrinsicContentSize]
         hostingView.onIntrinsicSizeInvalidated = { [weak self] in
             guard let self, self.isPanelVisible else { return }
-            self.positionAndResizePanel()
+            self.positionAndResizePanel(reanchor: false)
         }
         panel.contentView = hostingView
     }
@@ -137,7 +140,7 @@ final class StatusBarController: NSObject {
         controller.isMenuPanelOpen = true
         controller.refreshPermissions()
 
-        positionAndResizePanel()
+        positionAndResizePanel(reanchor: true)
         panel.makeKeyAndOrderFront(nil)
         // Prevent auto-focusing the custom bundle ID TextField when the menu opens.
         panel.makeFirstResponder(nil)
@@ -148,40 +151,64 @@ final class StatusBarController: NSObject {
     func closePanel() {
         guard isPanelVisible else { return }
         isPanelVisible = false
+        anchoredOriginX = nil
+        anchoredTopY = nil
         controller.isMenuPanelOpen = false
         panel.orderOut(nil)
         removeDismissMonitors()
     }
 
-    private func positionAndResizePanel() {
-        guard let button = statusItem.button,
-              let buttonWindow = button.window else {
-            return
-        }
-
+    private func positionAndResizePanel(reanchor: Bool) {
         hostingView.layoutSubtreeIfNeeded()
         let fitting = hostingView.fittingSize
         let size = NSSize(width: Self.panelWidth, height: max(100, ceil(fitting.height)))
 
-        let buttonRectInWindow = button.convert(button.bounds, to: nil)
-        let buttonScreenRect = buttonWindow.convertToScreen(buttonRectInWindow)
+        let originX: CGFloat
+        let topY: CGFloat
+        let visibleMinY: CGFloat
 
-        let targetScreen = buttonWindow.screen ?? NSScreen.main
-        let visibleFrame = targetScreen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+        if reanchor || anchoredOriginX == nil || anchoredTopY == nil {
+            guard let button = statusItem.button,
+                  let buttonWindow = button.window else {
+                return
+            }
 
-        let topY = buttonScreenRect.minY - 2
-        let originY = max(visibleFrame.minY + 8, topY - size.height)
-        let preferredX = round(buttonScreenRect.midX - Self.panelWidth / 2)
-        let maxX = visibleFrame.maxX - size.width - 8
-        let minX = visibleFrame.minX + 8
-        let originX = max(minX, min(preferredX, maxX))
+            let buttonRectInWindow = button.convert(button.bounds, to: nil)
+            let buttonScreenRect = buttonWindow.convertToScreen(buttonRectInWindow)
 
-        let arrowX = min(max(buttonScreenRect.midX - originX, 36), Self.panelWidth - 36)
-        if abs(controller.popoverArrowX - arrowX) > 0.5 {
-            controller.popoverArrowX = arrowX
+            let targetScreen = buttonWindow.screen ?? NSScreen.main
+            let visibleFrame = targetScreen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+
+            topY = buttonScreenRect.minY - 2
+            let preferredX = round(buttonScreenRect.midX - Self.panelWidth / 2)
+            let maxX = visibleFrame.maxX - size.width - 8
+            let minX = visibleFrame.minX + 8
+            originX = max(minX, min(preferredX, maxX))
+            visibleMinY = visibleFrame.minY
+
+            anchoredOriginX = originX
+            anchoredTopY = topY
+            anchoredVisibleMinY = visibleMinY
+
+            let arrowX = min(max(buttonScreenRect.midX - originX, 36), Self.panelWidth - 36)
+            if abs(controller.popoverArrowX - arrowX) > 0.5 {
+                controller.popoverArrowX = arrowX
+            }
+        } else {
+            originX = anchoredOriginX!
+            topY = anchoredTopY!
+            visibleMinY = anchoredVisibleMinY
         }
 
-        panel.setFrame(NSRect(origin: NSPoint(x: originX, y: originY), size: size), display: true)
+        let originY = max(visibleMinY + 8, topY - size.height)
+        let newFrame = NSRect(origin: NSPoint(x: originX, y: originY), size: size)
+        let currentFrame = panel.frame
+        if abs(currentFrame.origin.x - newFrame.origin.x) > 0.5 ||
+            abs(currentFrame.origin.y - newFrame.origin.y) > 0.5 ||
+            abs(currentFrame.size.width - newFrame.size.width) > 0.5 ||
+            abs(currentFrame.size.height - newFrame.size.height) > 0.5 {
+            panel.setFrame(newFrame, display: true)
+        }
     }
 
     private func installDismissMonitors() {
